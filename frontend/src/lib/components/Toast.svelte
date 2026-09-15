@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { uiStore, dismissToast, TOAST_DURATION_MS } from '$lib/stores/ui.svelte';
 	import { Info, CheckCircle, TriangleAlert, XCircle, Download, X } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 
 	// Derive toasts from store for reactive template usage
 	let toasts = $derived(uiStore.toasts);
@@ -78,7 +79,7 @@
 					<button
 						type="button"
 						class="flex min-h-touch min-w-touch items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/30"
-						aria-label="Dismiss notification"
+						aria-label={t('common.dismissNotification')}
 						onclick={() => dismissToast(toast.id)}
 					>
 						<X size={16} />

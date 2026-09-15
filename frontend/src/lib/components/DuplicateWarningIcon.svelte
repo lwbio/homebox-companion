@@ -7,6 +7,7 @@
 	 */
 	import type { DuplicateMatch } from '$lib/types';
 	import WarningTriangleIcon from './icons/WarningTriangleIcon.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		match: DuplicateMatch;
@@ -25,7 +26,7 @@
 		onmouseleave={() => (showTooltip = false)}
 		onfocus={() => (showTooltip = true)}
 		onblur={() => (showTooltip = false)}
-		aria-label="Possible duplicate item"
+		aria-label={t('review.duplicateWarning')}
 	>
 		<WarningTriangleIcon class="h-5 w-5" />
 	</button>
@@ -34,15 +35,16 @@
 	{#if showTooltip}
 		<div class="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2">
 			<div class="rounded-lg border border-neutral-700 bg-neutral-800 p-3 text-body-sm shadow-lg">
-				<p class="mb-1 font-semibold text-warning-300">Possible Duplicate</p>
+				<p class="mb-1 font-semibold text-warning-300">{t('review.duplicateWarning')}</p>
 				<p class="text-neutral-300">
-					Serial "<span class="font-mono text-warning-200">{match.serial_number}</span>" already
-					exists on:
+					{t('duplicate.serialExists', { serial: match.serial_number })}
 				</p>
 				<p class="mt-1 font-medium text-neutral-100">
 					"{match.item_name}"
 					{#if match.location_name}
-						<span class="font-normal text-neutral-400">in {match.location_name}</span>
+						<span class="font-normal text-neutral-400"
+							>{t('duplicate.inLocation', { location: match.location_name })}</span
+						>
 					{/if}
 				</p>
 			</div>

@@ -13,6 +13,7 @@
 	import { showToast } from '../stores/ui.svelte';
 	import Button from './Button.svelte';
 	import ApprovalItemPanel from './ApprovalItemPanel.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		open: boolean;
@@ -185,7 +186,7 @@
 	// Handle approval expiration - show toast, clear approvals, and close modal when countdown reaches 0
 	$effect(() => {
 		if (open && countdownSeconds === 0 && approvals.length > 0) {
-			showToast('Pending actions have expired', 'warning');
+			showToast(t('approval.pendingExpired'), 'warning');
 			chatStore.clearExpiredApprovals();
 			handleClose();
 		}
@@ -213,16 +214,20 @@
 				</div>
 				<div class="flex-1">
 					<h3 class="text-h4 text-neutral-100">
-						{approvals.length}
-						{approvals.length === 1 ? 'Action' : 'Actions'} Require Approval
+						{t('chat.approvalRequired', { n: approvals.length })}
 					</h3>
 					{#if countdownSeconds !== null}
 						<p class="text-body-sm text-warning-500/80">
-							Expires in {countdownSeconds}s
+							{t('approval.expiresIn', { n: countdownSeconds })}
 						</p>
 					{/if}
 				</div>
-				<button type="button" class="btn-icon" onclick={handleClose} aria-label="Close">
+				<button
+					type="button"
+					class="btn-icon"
+					onclick={handleClose}
+					aria-label={t('approval.close')}
+				>
 					<X size={20} />
 				</button>
 			</div>
@@ -252,7 +257,7 @@
 					loading={isProcessingAny}
 					onclick={handleRejectAll}
 				>
-					Reject All
+					{t('approval.rejectAll')}
 				</Button>
 				<Button
 					variant="warning"
@@ -262,7 +267,7 @@
 					loading={isProcessingAny}
 					onclick={handleApproveAll}
 				>
-					Approve All
+					{t('approval.approveAll')}
 				</Button>
 			</div>
 		</div>

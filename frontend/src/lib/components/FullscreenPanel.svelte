@@ -12,6 +12,7 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { X } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		open: boolean;
@@ -72,8 +73,8 @@
 					type="button"
 					class="btn-icon-touch"
 					onclick={handleClose}
-					title="Close fullscreen (Escape)"
-					aria-label="Close"
+					title={t('common.closeFullscreen')}
+					aria-label={t('common.close')}
 				>
 					<X size={20} strokeWidth={1.5} />
 				</button>

@@ -4,6 +4,7 @@
 	// heic2any is lazy-loaded in convertHeicIfNeeded() to save ~350KB initial bundle
 	import { X, TriangleAlert, Camera } from 'lucide-svelte';
 	import { qrLogger as log } from '$lib/utils/logger';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		onScan: (decodedText: string) => void;
@@ -13,7 +14,7 @@
 		title?: string;
 	}
 
-	let { onScan, onClose, onError, title = 'Scan QR Code' }: Props = $props();
+	let { onScan, onClose, onError, title = t('qr.title') }: Props = $props();
 
 	let videoElement = $state<HTMLVideoElement>();
 	let fileInput: HTMLInputElement;
@@ -37,7 +38,7 @@
 			// Check for secure context - camera APIs require HTTPS
 			if (!window.isSecureContext) {
 				isInsecureContext = true;
-				error = 'Camera requires HTTPS. Use the upload option below.';
+				error = t('qr.error.httpsRequired');
 				isStarting = false;
 				cameraFailed = true;
 				onError?.(error);
@@ -45,7 +46,7 @@
 			}
 
 			if (!videoElement) {
-				error = 'Video element not ready. Please try again.';
+				error = t('qr.error.videoNotReady');
 				isStarting = false;
 				cameraFailed = true;
 				onError?.(error);
@@ -55,7 +56,7 @@
 			// Use library's official method to check camera availability
 			const hasCamera = await QrScanner.hasCamera();
 			if (!hasCamera) {
-				error = 'No camera detected. Use the upload option below.';
+				error = t('qr.error.noCamera');
 				errorDebugCode = 'NOCAMERA';
 				isStarting = false;
 				cameraFailed = true;
@@ -147,31 +148,28 @@
 					msg.includes('Permission') ||
 					msg.includes('NotAllowed')
 				) {
-					error =
-						'Camera permission denied. Check your browser settings, or use the upload option below.';
+					error = t('qr.error.permissionDenied');
 				} else if (
 					name === 'NotFoundError' ||
 					msg.includes('NotFound') ||
 					msg.includes('DevicesNotFound')
 				) {
-					error = 'No camera detected. Use the upload option below.';
+					error = t('qr.error.noCamera');
 				} else if (name === 'NotReadableError' || msg.includes('NotReadable')) {
-					error =
-						'Camera is in use by another app. Close other apps or use the upload option below.';
+					error = t('qr.error.inUse');
 				} else if (name === 'OverconstrainedError' || msg.includes('Overconstrained')) {
-					error = 'Camera settings not supported. Use the upload option below.';
+					error = t('qr.error.settingsNotSupported');
 				} else if (name === 'NotSupportedError' || msg.includes('NotSupported')) {
-					error = 'Camera not supported in this browser. Use the upload option below.';
+					error = t('qr.error.notSupported');
 				} else if (name === 'AbortError' || msg.includes('Abort')) {
-					error = 'Camera request was aborted. Try again or use the upload option below.';
+					error = t('qr.error.aborted');
 				} else if (name === 'SecurityError' || msg.includes('Security')) {
-					error = 'Camera blocked for security reasons. Check site permissions.';
+					error = t('qr.error.blocked');
 				} else {
-					// Show the raw error message for unknown errors to help debugging
-					error = `Camera error: ${msg || 'Unknown error'}. Use the upload option below.`;
+					error = t('qr.error.generic', { error: msg || 'Unknown error' });
 				}
 			} else {
-				error = 'Failed to start camera. Use the upload option below.';
+				error = t('qr.error.failedToStart');
 			}
 
 			onError?.(error);
@@ -312,9 +310,9 @@
 			onScan(result.data);
 		} catch (err) {
 			if (err instanceof Error && err.message.includes('No QR code found')) {
-				error = 'No QR code found in image. Try a clearer photo.';
+				error = t('qr.error.noQrFound');
 			} else {
-				error = 'Could not read QR code from image. Try again.';
+				error = t('qr.error.readFailed');
 			}
 			onError?.(error);
 		} finally {
@@ -344,7 +342,7 @@
 			type="button"
 			onclick={handleClose}
 			class="p-2 text-neutral-400 transition-colors hover:text-neutral-100"
-			aria-label="Close scanner"
+			aria-label={t('qr.closeScanner')}
 		>
 			<X size={24} />
 		</button>
@@ -377,10 +375,10 @@
 							<div
 								class="h-5 w-5 animate-spin rounded-full border-2 border-neutral-100 border-t-transparent"
 							></div>
-							<span>Processing...</span>
+							<span>{t('qr.processing')}</span>
 						{:else}
 							<Camera size={20} />
-							<span>Take Photo</span>
+							<span>{t('qr.takePhoto')}</span>
 						{/if}
 					</button>
 
@@ -391,7 +389,7 @@
 							onclick={handleRetryCamera}
 							class="rounded-lg bg-neutral-800 px-4 py-2 text-neutral-100 transition-colors hover:bg-neutral-700"
 						>
-							Try Camera Again
+							{t('qr.tryCameraAgain')}
 						</button>
 					{/if}
 
@@ -400,7 +398,7 @@
 						onclick={handleClose}
 						class="px-4 py-2 text-neutral-500 transition-colors hover:text-neutral-100"
 					>
-						Cancel
+						{t('common.cancel')}
 					</button>
 				</div>
 			</div>
@@ -424,7 +422,7 @@
 							<div
 								class="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-2 border-neutral-100 border-t-transparent"
 							></div>
-							<p class="text-body-sm text-neutral-300">Starting camera...</p>
+							<p class="text-body-sm text-neutral-300">{t('qr.startingCamera')}</p>
 						</div>
 					</div>
 				{/if}
@@ -435,9 +433,9 @@
 	<!-- Footer with instructions -->
 	<div class="bg-neutral-950/80 p-4 text-center">
 		{#if cameraFailed}
-			<p class="text-body-sm text-neutral-500">Take a photo of the QR code</p>
+			<p class="text-body-sm text-neutral-500">{t('qr.instruction')}</p>
 		{:else}
-			<p class="text-body-sm text-neutral-500">Point your camera at a Homebox location QR code</p>
+			<p class="text-body-sm text-neutral-500">{t('qr.instructionDetail')}</p>
 		{/if}
 	</div>
 </div>

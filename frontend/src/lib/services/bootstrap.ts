@@ -5,6 +5,7 @@ import { setDemoMode, type ConfigResponse } from '$lib/api/settings';
 import { request } from '$lib/api/client';
 import { initializeAuth } from './tokenRefresh';
 import { setLogLevel } from '$lib/utils/logger';
+import { setLocaleFromLanguage } from '$lib/i18n';
 
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -67,6 +68,7 @@ async function runBootstrap(): Promise<void> {
 		const config = await discoverConfig();
 		setLogLevel(config.log_level);
 		setDemoMode(config.is_demo_mode, config.demo_mode_explicit);
+		setLocaleFromLanguage(config.output_language);
 		authStore.beginMode(config.auth_mode);
 
 		if (config.auth_mode === 'legacy') {

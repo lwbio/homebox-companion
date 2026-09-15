@@ -6,6 +6,7 @@
 	 * Uses the Unicode ⓘ character for minimal overhead.
 	 */
 	import Modal from './Modal.svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		/** The info text to display in the popup */
@@ -25,7 +26,7 @@
 	type="button"
 	class="-my-2 -ml-2 inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center text-sm leading-none text-neutral-500 transition-colors hover:text-neutral-400"
 	onclick={handleOpen}
-	aria-label="Show info"
+	aria-label={t('common.showInfo')}
 >
 	ⓘ
 </button>

@@ -12,6 +12,7 @@
 	import { collectionStore } from '$lib/stores/collection.svelte';
 	import { uiStore, showToast } from '$lib/stores/ui.svelte';
 	import { getVersion } from '$lib/api';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	import { initializeApp, retryConnection } from '$lib/services/bootstrap';
 	import Button from '$lib/components/Button.svelte';
@@ -35,13 +36,18 @@
 	// Show update toast when a new version is available
 	$effect(() => {
 		if (latestVersion && !updateDismissed && updateToastId === null && browser) {
-			updateToastId = showToast(`Update available: v${latestVersion}`, 'update', 0, {
-				persistent: true,
-				action: {
-					label: 'View release',
-					href: 'https://github.com/Duelion/homebox-companion/releases/latest',
-				},
-			});
+			updateToastId = showToast(
+				t('layout.updateAvailable', { version: latestVersion }),
+				'update',
+				0,
+				{
+					persistent: true,
+					action: {
+						label: t('layout.viewRelease'),
+						href: 'https://github.com/Duelion/homebox-companion/releases/latest',
+					},
+				}
+			);
 		}
 	});
 
@@ -216,7 +222,7 @@
 				: 'bottom-0'}"
 		>
 			<WifiOff size={16} strokeWidth={2} />
-			<span>You're offline. Some features may not work.</span>
+			<span>{t('layout.offline')}</span>
 		</div>
 	{/if}
 
@@ -234,7 +240,7 @@
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300 transition-colors hover:bg-amber-500/30"
-					title="Click to view release"
+					title={t('layout.viewRelease')}
 				>
 					<Download size={12} strokeWidth={2} />
 					<span>v{latestVersion}</span>
@@ -245,14 +251,14 @@
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center gap-1 transition-colors hover:text-neutral-400"
-				title="Star on GitHub"
+				title={t('layout.starOnGitHub')}
 			>
 				<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 16 16">
 					<path
 						d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
 					/>
 				</svg>
-				<span>Star</span>
+				<span>{t('layout.star')}</span>
 				<svg class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16">
 					<path
 						d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"

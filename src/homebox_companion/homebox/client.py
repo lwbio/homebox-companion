@@ -321,7 +321,7 @@ class HomeboxClient:
             )
 
         # Homebox >= 0.24 uses "raw"; older responses use "token".
-        new_token = data.get("token") or data.get("raw")
+        new_token = data.get("token") or data.get("raw") or data.get("jwt") or data.get("accessToken")
         if not isinstance(new_token, str):
             raise HomeboxAPIError(
                 "Token refresh response did not include a string token.", user_message=invalid_response_message

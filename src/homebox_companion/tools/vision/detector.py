@@ -125,7 +125,9 @@ async def _detect_items_from_data_uris(
             custom_fields=custom_fields,
         )
 
-    user_prompt = build_detection_user_prompt(extra_instructions, extract_extended_fields, multi_image, single_item)
+    user_prompt = build_detection_user_prompt(
+        extra_instructions, extract_extended_fields, multi_image, single_item, output_language
+    )
 
     # Call LLM (with structured output when supported)
     response_model = get_items_response_model(custom_fields)

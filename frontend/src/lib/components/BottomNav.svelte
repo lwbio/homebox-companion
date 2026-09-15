@@ -11,6 +11,7 @@
 		handleDisabledNavClick,
 		resolveNavHref,
 	} from '$lib/navigation/config';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	// Explicit demo mode (HBC_DEMO_MODE env var) disables certain features like chat
 	let isDemoModeExplicit = $derived(getIsDemoModeExplicit());
@@ -29,7 +30,7 @@
 <nav
 	class="glass pb-safe fixed bottom-0 left-0 right-0 z-50 border-t border-neutral-700 md:hidden"
 	style="view-transition-name: bottom-nav; transform: translateZ(0); -webkit-transform: translateZ(0);"
-	aria-label="Main navigation"
+	aria-label={t('common.mainNavigation')}
 >
 	<AppContainer class="px-2">
 		<ul class="flex h-16 items-center justify-around" role="menubar">
@@ -43,14 +44,14 @@
 							type="button"
 							role="menuitem"
 							aria-disabled="true"
-							title={item.disabledTooltip}
+							title={t(item.disabledTooltip ?? '')}
 							onclick={() => handleDisabledNavClick(item)}
 							class="relative flex w-full cursor-not-allowed flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-neutral-600"
 						>
 							<span class="flex h-6 w-6 items-center justify-center">
 								<NavIcon icon={item.icon} />
 							</span>
-							<span class="text-xs font-medium">{item.label}</span>
+							<span class="text-xs font-medium">{t(item.label)}</span>
 						</button>
 					{:else}
 						<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved via resolveNavHref() -->
@@ -59,14 +60,14 @@
 							role="menuitem"
 							aria-current={active ? 'page' : undefined}
 							class="flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 transition-all duration-200
-							{active
+						{active
 								? 'bg-primary-500/10 text-primary-500'
 								: 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200'}"
 						>
 							<span class="flex h-6 w-6 items-center justify-center">
 								<NavIcon icon={item.icon} />
 							</span>
-							<span class="text-xs font-medium">{item.label}</span>
+							<span class="text-xs font-medium">{t(item.label)}</span>
 						</a>
 					{/if}
 				</li>

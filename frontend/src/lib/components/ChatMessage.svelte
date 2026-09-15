@@ -11,6 +11,7 @@
 	import { TriangleAlert, ChevronRight, Check, Copy } from 'lucide-svelte';
 	import type { ChatMessage as ChatMessageType, ToolResult } from '../stores/chat.svelte';
 	import { renderMarkdown } from '../markdown';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		message: ChatMessageType;
@@ -210,17 +211,16 @@
 				<!-- Fallback summary when no content but has executed actions -->
 				<p class="m-0 text-neutral-300">
 					{#if executedActionStats.allSuccess && executedActionStats.rejected === 0}
-						<span class="font-bold text-success-500">✓</span> Completed {executedActionStats.total} action{executedActionStats.total !==
-						1
-							? 's'
-							: ''} successfully
+						<span class="font-bold text-success-500">✓</span>
+						{t('chat.messageCompleted', { n: executedActionStats.total })}
 					{:else if executedActionStats.rejected > 0 && executedActionStats.success === 0}
-						<span class="font-bold text-warning-500">⊘</span> Rejected {executedActionStats.rejected}
-						action{executedActionStats.rejected !== 1 ? 's' : ''}
+						<span class="font-bold text-warning-500">⊘</span>
+						{t('chat.messageRejected', { n: executedActionStats.rejected })}
 					{:else}
-						{executedActionStats.success} completed{executedActionStats.rejected > 0
-							? `, ${executedActionStats.rejected} rejected`
-							: ''}
+						{t('chat.messagePartial', {
+							success: executedActionStats.success,
+							rejected: executedActionStats.rejected,
+						})}
 					{/if}
 				</p>
 			{/if}
@@ -236,8 +236,7 @@
 						<TriangleAlert size={12} />
 					</div>
 					<span class="flex-1">
-						{pendingApprovalCount}
-						{pendingApprovalCount === 1 ? 'action requires' : 'actions require'} approval
+						{t('chat.approvalRequired', { n: pendingApprovalCount })}
 					</span>
 					<ChevronRight class="opacity-70" size={14} />
 				</button>
@@ -255,7 +254,7 @@
 				<details class="tool-accordion group/tools chat-tools-section">
 					<summary class="chat-tools-summary">
 						<span class="transform transition-transform group-open/tools:rotate-90">›</span>
-						Used {totalToolCount} tool{totalToolCount > 1 ? 's' : ''}
+						{t('chat.toolsUsed', { n: totalToolCount })}
 					</summary>
 					<div class="chat-tools-grid">
 						<!-- Read-only tool badges -->
@@ -323,7 +322,7 @@
 					? '-right-1 bg-primary-700/80 text-primary-200 hover:bg-primary-600 hover:text-white'
 					: '-left-1 bg-neutral-700/80 text-neutral-400 hover:bg-neutral-600 hover:text-neutral-200'}"
 				onclick={handleCopy}
-				aria-label="Copy message"
+				aria-label={t('common.copyMessage')}
 			>
 				{#if copySuccess}
 					<Check class="text-success-500" size={14} />
@@ -342,7 +341,7 @@
 			})}
 		</time>
 		{#if !isUser && message.tokenUsage}
-			<span>{message.tokenUsage.total} tokens</span>
+			<span>{t('chat.tokens', { n: message.tokenUsage.total })}</span>
 		{/if}
 	</div>
 </div>

@@ -1,5 +1,6 @@
 import { resolve } from '$app/paths';
 import { showToast } from '$lib/stores/ui.svelte';
+import { t } from '$lib/i18n';
 
 /**
  * Navigation item configuration.
@@ -51,25 +52,24 @@ export function getNavItems(scanHref: string, isDemoModeExplicit: boolean): NavI
 	return [
 		{
 			id: 'chat',
-			label: 'Chat',
+			label: 'nav.chat',
 			href: '/chat',
 			icon: 'chat',
 			activeRoutes: ['/chat'],
 			disabled: isDemoModeExplicit,
-			disabledTooltip: 'Chat is disabled in demo mode',
-			disabledMessage:
-				'Chat is disabled in demo mode. Self-host your own instance to use this feature.',
+			disabledTooltip: 'nav.chatDisabled',
+			disabledMessage: 'nav.chatDisabledMessage',
 		},
 		{
 			id: 'scan',
-			label: 'Scan',
+			label: 'nav.scan',
 			href: scanHref,
 			icon: 'scan',
 			activeRoutes: ['/location', '/capture', '/review', '/summary', '/success'],
 		},
 		{
 			id: 'settings',
-			label: 'Settings',
+			label: 'nav.settings',
 			href: '/settings',
 			icon: 'settings',
 			activeRoutes: ['/settings'],
@@ -96,6 +96,6 @@ export function resolveNavHref(href: string): string {
  */
 export function handleDisabledNavClick(item: NavItem): void {
 	if (item.disabledMessage) {
-		showToast(item.disabledMessage, 'warning');
+		showToast(t(item.disabledMessage), 'warning');
 	}
 }

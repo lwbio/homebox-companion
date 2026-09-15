@@ -3,6 +3,7 @@
 	import type { Location } from '$lib/types';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		open: boolean;
@@ -46,7 +47,7 @@
 		e.preventDefault();
 
 		if (!name.trim()) {
-			error = 'Name is required';
+			error = t('locationModal.error.nameRequired');
 			return;
 		}
 
@@ -69,7 +70,7 @@
 			}, 800);
 		} catch (err) {
 			saveState = 'error';
-			error = err instanceof Error ? err.message : 'Failed to save location';
+			error = err instanceof Error ? err.message : t('locationModal.error.saveFailed');
 		}
 	}
 
@@ -80,7 +81,7 @@
 		onclose?.();
 	}
 
-	const title = $derived(mode === 'create' ? 'Create Location' : 'Edit Location');
+	const title = $derived(mode === 'create' ? t('locationModal.create') : t('locationModal.edit'));
 	const isSaving = $derived(saveState === 'saving' || saveState === 'success');
 </script>
 
@@ -88,7 +89,7 @@
 	<form onsubmit={handleSubmit} class="space-y-4">
 		{#if mode === 'create' && parentLocation}
 			<div class="rounded-lg border border-neutral-700 bg-neutral-700 p-3">
-				<p class="text-sm text-neutral-400">Creating inside:</p>
+				<p class="text-sm text-neutral-400">{t('locationModal.creatingInside')}</p>
 				<p class="flex items-center gap-2 font-medium text-neutral-200">
 					<MapPin class="text-primary" size={16} />
 					{parentLocation.name}
@@ -96,23 +97,23 @@
 			</div>
 		{:else if mode === 'create'}
 			<div class="rounded-lg border border-neutral-700 bg-neutral-700 p-3">
-				<p class="text-sm text-neutral-400">Creating at:</p>
+				<p class="text-sm text-neutral-400">{t('locationModal.creatingAt')}</p>
 				<p class="flex items-center gap-2 font-medium text-neutral-200">
 					<Home class="text-primary" size={16} />
-					Root level
+					{t('locationModal.rootLevel')}
 				</p>
 			</div>
 		{/if}
 
 		<div>
 			<label for="location-name" class="mb-1 block text-sm font-medium text-neutral-200">
-				Name <span class="text-error">*</span>
+				{t('locationModal.name')} <span class="text-error">*</span>
 			</label>
 			<input
 				id="location-name"
 				type="text"
 				bind:value={name}
-				placeholder="e.g., Living Room, Drawer 1, Shelf A"
+				placeholder={t('locationModal.namePlaceholder')}
 				class="placeholder:text-neutral-200-dim w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-neutral-200 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
 				disabled={isSaving}
 			/>
@@ -120,12 +121,12 @@
 
 		<div>
 			<label for="location-description" class="mb-1 block text-sm font-medium text-neutral-200">
-				Description
+				{t('locationModal.description')}
 			</label>
 			<textarea
 				id="location-description"
 				bind:value={description}
-				placeholder="e.g., Second drawer from top, left side of garage"
+				placeholder={t('locationModal.descriptionPlaceholder')}
 				rows="3"
 				class="placeholder:text-neutral-200-dim w-full resize-none rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-neutral-200 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
 				disabled={isSaving}
@@ -139,21 +140,23 @@
 		{/if}
 
 		<div class="flex gap-3 pt-2">
-			<Button variant="secondary" full onclick={handleClose} disabled={isSaving}>Cancel</Button>
+			<Button variant="secondary" full onclick={handleClose} disabled={isSaving}
+				>{t('common.cancel')}</Button
+			>
 			<Button variant="primary" full type="submit" disabled={isSaving || !name.trim()}>
 				{#if saveState === 'saving'}
 					<div
 						class="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"
 					></div>
-					<span>Saving...</span>
+					<span>{t('common.saving')}</span>
 				{:else if saveState === 'success'}
 					<div class="flex h-8 w-8 items-center justify-center rounded-full bg-success-500/20">
 						<Check class="text-success-500" size={20} strokeWidth={2.5} />
 					</div>
-					<span>Saved!</span>
+					<span>{t('common.saved')}</span>
 				{:else}
 					<Check size={20} />
-					<span>{mode === 'create' ? 'Create Location' : 'Save Changes'}</span>
+					<span>{mode === 'create' ? t('locationModal.create') : t('locationModal.edit')}</span>
 				{/if}
 			</Button>
 		</div>

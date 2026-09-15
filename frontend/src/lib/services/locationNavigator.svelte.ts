@@ -13,6 +13,7 @@ import { locations as locationsApi } from '$lib/api';
 import { locationStore } from '$lib/stores/locations.svelte';
 import { scanWorkflow } from '$lib/workflows/scan.svelte';
 import { showToast } from '$lib/stores/ui.svelte';
+import { t } from '$lib/i18n';
 import { createLogger } from '$lib/utils/logger';
 import type { Location } from '$lib/types';
 
@@ -118,7 +119,7 @@ class LocationNavigator {
 			locationStore.setFlatList(locationStore.tree);
 		} catch (error) {
 			log.error('Failed to refresh current level', error);
-			showToast('Failed to refresh locations', 'error');
+			showToast(t('location.refreshFailed'), 'error');
 		} finally {
 			this._isLoading = false;
 		}
@@ -179,7 +180,7 @@ class LocationNavigator {
 			};
 		} catch (error) {
 			log.error('Failed to load location details', error);
-			showToast('Failed to load location details', 'error');
+			showToast(t('location.detailsFailed'), 'error');
 			// Fallback to using existing children data
 			locationStore.pushPath({ id: location.id, name: location.name });
 			locationStore.setCurrentLevel(location.children || []);
@@ -205,7 +206,7 @@ class LocationNavigator {
 				locationStore.setCurrentLevel(tree);
 			} catch (error) {
 				log.error('Failed to refresh root locations', error);
-				showToast('Failed to load locations', 'error');
+				showToast(t('location.loadFailed'), 'error');
 				// Fallback to cached tree
 				locationStore.setPath([]);
 				locationStore.setCurrentLevel(locationStore.tree);
@@ -238,7 +239,7 @@ class LocationNavigator {
 				};
 			} catch (error) {
 				log.error('Failed to load location details', error);
-				showToast('Failed to navigate back', 'error');
+				showToast(t('location.navigateBackFailed'), 'error');
 				// Restore previous state on error to avoid inconsistent UI
 				locationStore.setPath(previousPath);
 				locationStore.setCurrentLevel(previousCurrentLevel);
@@ -293,7 +294,7 @@ class LocationNavigator {
 				};
 			} catch (error) {
 				log.error('Failed to load location details', error);
-				showToast('Failed to restore navigation', 'error');
+				showToast(t('location.restoreFailed'), 'error');
 			} finally {
 				this._isLoading = false;
 			}
@@ -341,7 +342,7 @@ class LocationNavigator {
 			await this.updateBreadcrumbNames();
 		} catch (error) {
 			log.error('Failed to refresh selected location', error);
-			showToast('Failed to refresh location', 'error');
+			showToast(t('location.refreshDetailFailed'), 'error');
 		} finally {
 			this._isLoading = false;
 		}

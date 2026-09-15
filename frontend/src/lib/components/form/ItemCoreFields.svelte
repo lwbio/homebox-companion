@@ -8,6 +8,7 @@
 	import { expandable } from '$lib/actions/expandable';
 	import type { FormSize } from './types';
 	import { getInputClass, getLabelClass } from './types';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		name: string;
@@ -37,13 +38,13 @@
 <div class={spacing}>
 	<!-- Name field -->
 	<div>
-		<label for="{idPrefix}-name" class={labelClass}>Name</label>
+		<label for="{idPrefix}-name" class={labelClass}>{t('form.name')}</label>
 		{#if size === 'sm'}
 			<input
 				type="text"
 				id="{idPrefix}-name"
 				bind:value={name}
-				placeholder="Item name"
+				placeholder={t('form.namePlaceholder')}
 				class={inputClass}
 				{disabled}
 			/>
@@ -52,7 +53,7 @@
 				id="{idPrefix}-name"
 				bind:value={name}
 				rows="1"
-				placeholder="Item name"
+				placeholder={t('form.namePlaceholder')}
 				class="input-expandable"
 				use:expandable
 				{disabled}
@@ -62,7 +63,7 @@
 
 	<!-- Quantity field -->
 	<div>
-		<label for="{idPrefix}-quantity" class={labelClass}>Quantity</label>
+		<label for="{idPrefix}-quantity" class={labelClass}>{t('form.quantity')}</label>
 		<input
 			type="number"
 			id="{idPrefix}-quantity"
@@ -75,12 +76,12 @@
 
 	<!-- Description field -->
 	<div>
-		<label for="{idPrefix}-description" class={labelClass}>Description</label>
+		<label for="{idPrefix}-description" class={labelClass}>{t('form.description')}</label>
 		{#if size === 'sm'}
 			<textarea
 				id="{idPrefix}-description"
 				bind:value={description}
-				placeholder="Optional description"
+				placeholder={t('form.descriptionPlaceholder')}
 				rows="2"
 				class="{inputClass} resize-none"
 				{disabled}
@@ -90,7 +91,7 @@
 				id="{idPrefix}-description"
 				bind:value={description}
 				rows="1"
-				placeholder="Optional description"
+				placeholder={t('form.descriptionPlaceholder')}
 				class="input-expandable"
 				use:expandable
 				{disabled}

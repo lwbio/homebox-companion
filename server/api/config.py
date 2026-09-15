@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from homebox_companion.core.field_preferences import get_defaults
+
 router = APIRouter()
 
 
@@ -22,6 +24,7 @@ class ConfigResponse(BaseModel):
     capture_max_file_size_mb: int
     print_enabled: bool
     auth_mode: str
+    output_language: str
 
 
 @router.get("/config", response_model=ConfigResponse)
@@ -44,4 +47,5 @@ async def get_config(request: Request) -> ConfigResponse:
         capture_max_file_size_mb=app_settings.capture_max_file_size_mb,
         print_enabled=app_settings.print_enabled,
         auth_mode=app_settings.auth_mode,
+        output_language=get_defaults().output_language,
     )

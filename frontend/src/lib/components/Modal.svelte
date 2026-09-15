@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { X } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		open: boolean;
@@ -60,7 +61,7 @@
 						type="button"
 						class="min-h-touch min-w-touch rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-200"
 						onclick={handleClose}
-						aria-label="Close"
+						aria-label={t('common.close')}
 					>
 						<X size={20} />
 					</button>
@@ -74,7 +75,7 @@
 						type="button"
 						class="absolute right-2 top-2 rounded-lg p-1.5 text-neutral-500 transition-colors hover:bg-neutral-700 hover:text-neutral-300"
 						onclick={handleClose}
-						aria-label="Close"
+						aria-label={t('common.close')}
 					>
 						<X size={16} />
 					</button>

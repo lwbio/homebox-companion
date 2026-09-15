@@ -9,6 +9,13 @@ import { authLogger as log } from '../utils/logger';
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
+ * Deduplication singleton for concurrent refresh attempts.
+ * All callers (timer, visibility, init, 401 handler) share this
+ * to prevent multiple simultaneous POST /refresh requests.
+ */
+let refreshPromise: Promise<boolean> | null = null;
+
+/**
  * Timestamp of the last successful API activity or token refresh.
  * Used by the visibility listener to avoid unnecessary refreshes on quick tab switches.
  */
@@ -55,11 +62,29 @@ export function getInitPromise(): Promise<void> {
 }
 
 /**
- * Refresh the current token
+ * Refresh the current token.
+ * Uses a shared promise to deduplicate concurrent calls — only one
+ * POST /refresh is ever in-flight at a time.
  * @returns true if refresh succeeded, false otherwise
  */
 export async function refreshToken(): Promise<boolean> {
 	if (!authStore.isLegacy) return false;
+	// If a refresh is already in progress, piggyback on it
+	if (refreshPromise) {
+		return refreshPromise;
+	}
+
+	refreshPromise = doRefresh().finally(() => {
+		refreshPromise = null;
+	});
+
+	return refreshPromise;
+}
+
+/**
+ * Internal refresh implementation — performs the actual HTTP call.
+ */
+async function doRefresh(): Promise<boolean> {
 	try {
 		const response = await auth.refresh();
 		// Use setAuthenticatedState to ensure all state updates happen atomically

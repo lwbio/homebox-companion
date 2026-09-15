@@ -9,6 +9,7 @@
 	import { ChevronDown } from 'lucide-svelte';
 	import type { FormSize } from './types';
 	import { getInputClass, getLabelClass } from './types';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		manufacturer: string | null | undefined;
@@ -58,9 +59,11 @@
 		aria-expanded={expanded}
 	>
 		<ChevronDown class="transition-transform {expanded ? 'rotate-180' : ''}" size={16} />
-		<span>Extended Fields</span>
+		<span>{t('form.extendedFields')}</span>
 		{#if hasData}
-			<span class="rounded bg-primary-500/20 px-1.5 py-0.5 text-xs text-primary-300">Has data</span>
+			<span class="rounded bg-primary-500/20 px-1.5 py-0.5 text-xs text-primary-300"
+				>{t('form.hasData')}</span
+			>
 		{/if}
 	</button>
 
@@ -68,23 +71,23 @@
 		<div class="mt-4 {spacing}" transition:slide={{ duration: 200 }}>
 			<div class="grid grid-cols-2 {gridGap}">
 				<div>
-					<label for="{idPrefix}-manufacturer" class={labelClass}>Manufacturer</label>
+					<label for="{idPrefix}-manufacturer" class={labelClass}>{t('form.manufacturer')}</label>
 					<input
 						type="text"
 						id="{idPrefix}-manufacturer"
 						bind:value={manufacturer}
-						placeholder="e.g. DeWalt"
+						placeholder={t('form.manufacturerPlaceholder')}
 						class={inputClass}
 						{disabled}
 					/>
 				</div>
 				<div>
-					<label for="{idPrefix}-model" class={labelClass}>Model Number</label>
+					<label for="{idPrefix}-model" class={labelClass}>{t('form.modelNumber')}</label>
 					<input
 						type="text"
 						id="{idPrefix}-model"
 						bind:value={modelNumber}
-						placeholder="e.g. DCD771C2"
+						placeholder={t('form.modelNumberPlaceholder')}
 						class={inputClass}
 						{disabled}
 					/>
@@ -92,12 +95,12 @@
 			</div>
 
 			<div>
-				<label for="{idPrefix}-serial" class={labelClass}>Serial Number</label>
+				<label for="{idPrefix}-serial" class={labelClass}>{t('form.serialNumber')}</label>
 				<input
 					type="text"
 					id="{idPrefix}-serial"
 					bind:value={serialNumber}
-					placeholder="e.g. SN123456789"
+					placeholder={t('form.serialNumberPlaceholder')}
 					class={inputClass}
 					{disabled}
 				/>
@@ -105,7 +108,7 @@
 
 			<div class="grid grid-cols-2 {gridGap}">
 				<div>
-					<label for="{idPrefix}-price" class={labelClass}>Purchase Price</label>
+					<label for="{idPrefix}-price" class={labelClass}>{t('form.purchasePrice')}</label>
 					<input
 						type="number"
 						id="{idPrefix}-price"
@@ -118,12 +121,12 @@
 					/>
 				</div>
 				<div>
-					<label for="{idPrefix}-vendor" class={labelClass}>Purchased From</label>
+					<label for="{idPrefix}-vendor" class={labelClass}>{t('form.purchasedFrom')}</label>
 					<input
 						type="text"
 						id="{idPrefix}-vendor"
 						bind:value={purchaseFrom}
-						placeholder="e.g. Amazon"
+						placeholder={t('form.purchasedFromPlaceholder')}
 						class={inputClass}
 						{disabled}
 					/>
@@ -131,12 +134,12 @@
 			</div>
 
 			<div>
-				<label for="{idPrefix}-notes" class={labelClass}>Notes</label>
+				<label for="{idPrefix}-notes" class={labelClass}>{t('form.notes')}</label>
 				<textarea
 					id="{idPrefix}-notes"
 					bind:value={notes}
 					rows="2"
-					placeholder="e.g., Good condition, minor scratches on left side"
+					placeholder={t('form.notesPlaceholder')}
 					class="{inputClass} resize-none"
 					{disabled}
 				></textarea>

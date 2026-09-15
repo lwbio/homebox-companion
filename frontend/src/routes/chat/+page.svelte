@@ -20,6 +20,7 @@
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ApprovalModal from '$lib/components/ApprovalModal.svelte';
 	import AppContainer from '$lib/components/AppContainer.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	const log = createLogger({ prefix: 'ChatPage' });
 
@@ -156,7 +157,7 @@
 </script>
 
 <svelte:head>
-	<title>Chat | Homebox Companion</title>
+	<title>{t('chat.title')}</title>
 </svelte:head>
 
 <!-- Main content area with bottom padding for the fixed input -->
@@ -169,24 +170,25 @@
 				<div class="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-warning-500/10">
 					<CircleAlert class="text-warning-500" size={32} strokeWidth={1.5} />
 				</div>
-				<h2 class="mb-2 text-h3 text-neutral-100">Chat Unavailable</h2>
+				<h2 class="mb-2 text-h3 text-neutral-100">{t('chat.unavailable')}</h2>
 				<p class="mb-3 max-w-xs text-center text-body-sm text-neutral-400">
-					Sorry, the chat feature is disabled in demo mode to prevent misuse.
+					{t('chat.unavailableMessage')}
 				</p>
 				<p class="max-w-xs text-center text-body-sm text-neutral-500">
-					To use chat, please set up your own instance with your own API key.
+					{t('chat.unavailableHint')}
 				</p>
 			{:else}
 				<!-- Server disabled state -->
 				<div class="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-error-500/10">
 					<Ban class="text-error-500" size={32} strokeWidth={1.5} />
 				</div>
-				<h2 class="mb-2 text-h3 text-neutral-100">Chat Disabled</h2>
+				<h2 class="mb-2 text-h3 text-neutral-100">{t('chat.disabled')}</h2>
 				<p class="mb-1 text-body-sm text-neutral-400">
-					The chat feature is currently disabled on the server.
+					{t('chat.disabledMessage')}
 				</p>
 				<p class="mb-1 text-body-sm text-neutral-400">
-					Enable it by setting <code
+					{t('chat.enableHint')}
+					<code
 						class="mt-3 inline-block rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 font-mono text-sm-tight text-primary-300"
 						>HBC_CHAT_ENABLED=true</code
 					>
@@ -203,32 +205,34 @@
 					>
 						<MessageSquare class="text-primary-400" size={56} strokeWidth={1.5} />
 					</div>
-					<h2 class="mb-2 px-4 text-center text-h1 text-neutral-100">Start a conversation</h2>
+					<h2 class="mb-2 px-4 text-center text-h1 text-neutral-100">
+						{t('chat.startConversation')}
+					</h2>
 					<p class="mb-6 max-w-xs px-4 text-center text-body text-neutral-400">
-						Ask me about your inventory, locations, or items.
+						{t('chat.startHint')}
 					</p>
 
 					<div class="flex w-full max-w-sm flex-col gap-2 px-4">
 						<button
 							class="flex cursor-pointer items-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-left text-body-sm text-neutral-200 transition-all duration-fast hover:-translate-y-px hover:border-primary-500 hover:bg-neutral-800 active:scale-[0.98]"
-							onclick={() => chatStore.sendMessage('What locations do I have?')}
+							onclick={() => chatStore.sendMessage(t('chat.suggestion.locations'))}
 						>
 							<MapPin class="shrink-0 text-primary-500" size={18} strokeWidth={1.5} />
-							<span class="flex-1">What locations do I have?</span>
+							<span class="flex-1">{t('chat.suggestion.locations')}</span>
 						</button>
 						<button
 							class="flex cursor-pointer items-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-left text-body-sm text-neutral-200 transition-all duration-fast hover:-translate-y-px hover:border-primary-500 hover:bg-neutral-800 active:scale-[0.98]"
-							onclick={() => chatStore.sendMessage('List my tags')}
+							onclick={() => chatStore.sendMessage(t('chat.suggestion.tags'))}
 						>
 							<Tag class="shrink-0 text-primary-500" size={18} strokeWidth={1.5} />
-							<span class="flex-1">List my tags</span>
+							<span class="flex-1">{t('chat.suggestion.tags')}</span>
 						</button>
 						<button
 							class="flex cursor-pointer items-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-left text-body-sm text-neutral-200 transition-all duration-fast hover:-translate-y-px hover:border-primary-500 hover:bg-neutral-800 active:scale-[0.98]"
-							onclick={() => chatStore.sendMessage('How many items are in my inventory?')}
+							onclick={() => chatStore.sendMessage(t('chat.suggestion.count'))}
 						>
 							<Archive class="shrink-0 text-primary-500" size={18} strokeWidth={1.5} />
-							<span class="flex-1">How many items are in my inventory?</span>
+							<span class="flex-1">{t('chat.suggestion.count')}</span>
 						</button>
 					</div>
 				</div>

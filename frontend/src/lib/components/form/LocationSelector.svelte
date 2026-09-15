@@ -8,6 +8,7 @@
 	import { locationStore } from '$lib/stores/locations.svelte';
 	import type { FormSize } from './types';
 	import { getInputClass, getLabelClass } from './types';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		/**
@@ -27,7 +28,7 @@
 		size = 'md',
 		disabled = false,
 		idPrefix = 'location',
-		fallbackDisplay = 'No location',
+		fallbackDisplay = t('form.noLocation'),
 	}: Props = $props();
 
 	// Dynamic classes based on size
@@ -36,10 +37,10 @@
 </script>
 
 <div>
-	<label for="{idPrefix}-location" class={labelClass}>Location</label>
+	<label for="{idPrefix}-location" class={labelClass}>{t('form.location')}</label>
 	{#if locationStore.flatList.length > 0}
 		<select id="{idPrefix}-location" bind:value class={inputClass} {disabled}>
-			<option value="">Select location...</option>
+			<option value="">{t('form.selectLocation')}</option>
 			{#each locationStore.flatList as loc (loc.location.id)}
 				<option value={loc.location.id}>{loc.path}</option>
 			{/each}

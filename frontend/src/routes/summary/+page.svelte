@@ -16,6 +16,7 @@
 	import AnalysisProgressBar from '$lib/components/AnalysisProgressBar.svelte';
 	import AppContainer from '$lib/components/AppContainer.svelte';
 	import DuplicateWarningIcon from '$lib/components/DuplicateWarningIcon.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 	import {
 		MapPin,
 		ImageIcon,
@@ -72,10 +73,7 @@
 		// Show toast if any items have potential duplicates
 		const duplicateCount = confirmedItems.filter((item) => item.duplicate_match).length;
 		if (duplicateCount > 0) {
-			showToast(
-				`${duplicateCount} item${duplicateCount > 1 ? 's' : ''} may already exist in your inventory`,
-				'warning'
-			);
+			showToast(t('summary.warning.duplicate', { count: duplicateCount }), 'warning');
 		}
 	});
 
@@ -115,7 +113,7 @@
 
 	async function submitAll() {
 		if (confirmedItems.length === 0) {
-			showToast('No items to submit', 'warning');
+			showToast(t('summary.error.noItems'), 'warning');
 			return;
 		}
 
@@ -135,15 +133,18 @@
 
 		// Show appropriate toast based on results
 		if (result.failCount > 0 && result.successCount === 0 && result.partialSuccessCount === 0) {
-			showToast('All items failed to create', 'error');
+			showToast(t('summary.error.allFailed'), 'error');
 		} else if (result.failCount > 0) {
 			showToast(
-				`Created ${result.successCount + result.partialSuccessCount} items, ${result.failCount} failed`,
+				t('summary.warning.partialSuccess', {
+					created: result.successCount + result.partialSuccessCount,
+					failed: result.failCount,
+				}),
 				'warning'
 			);
 		} else if (result.partialSuccessCount > 0) {
 			showToast(
-				`${result.partialSuccessCount} item(s) created with incomplete details or attachments`,
+				t('summary.warning.missingAttachments', { count: result.partialSuccessCount }),
 				'warning'
 			);
 			goto(resolve('/success'));
@@ -167,14 +168,14 @@
 
 		if (result.failCount > 0) {
 			showToast(
-				`Retried: ${result.successCount + result.partialSuccessCount} succeeded, ${result.failCount} still failing`,
+				t('summary.info.retried', {
+					succeeded: result.successCount + result.partialSuccessCount,
+					failed: result.failCount,
+				}),
 				'warning'
 			);
 		} else if (result.partialSuccessCount > 0) {
-			showToast(
-				`Retry complete: ${result.partialSuccessCount} item(s) need attention in Homebox`,
-				'warning'
-			);
+			showToast(t('summary.info.retryComplete', { count: result.partialSuccessCount }), 'warning');
 			goto(resolve('/success'));
 		} else if (result.success) {
 			goto(resolve('/success'));
@@ -188,14 +189,14 @@
 </script>
 
 <svelte:head>
-	<title>Review & Submit - Homebox Companion</title>
+	<title>{t('summary.title')}</title>
 </svelte:head>
 
 <div class="animate-in pb-28">
 	<StepIndicator currentStep={4} />
 
-	<h2 class="mb-1 text-h2 text-neutral-100">Review & Submit</h2>
-	<p class="mb-6 text-body-sm text-neutral-400">Confirm items to add to your inventory</p>
+	<h2 class="mb-1 text-h2 text-neutral-100">{t('summary.heading')}</h2>
+	<p class="mb-6 text-body-sm text-neutral-400">{t('summary.subheading')}</p>
 
 	<!-- Compact location header -->
 	{#if locationPath}
@@ -203,14 +204,14 @@
 			<!-- Location block -->
 			<div class="flex items-center gap-2">
 				<MapPin size={16} strokeWidth={1.5} />
-				<span>Items will be added to:</span>
+				<span>{t('summary.itemsWillBeAdded')}</span>
 				<span class="font-semibold text-neutral-200">{locationPath}</span>
 			</div>
 
 			<!-- Parent item block (if present) -->
 			{#if parentItemName}
 				<div class="flex items-center gap-2">
-					<span class="text-neutral-500">Inside:</span>
+					<span class="text-neutral-500">{t('summary.inside')}</span>
 					<span class="font-semibold text-primary-400">{parentItemName}</span>
 				</div>
 			{/if}
@@ -223,7 +224,7 @@
 			<AnalysisProgressBar
 				current={submissionProgress.current}
 				total={submissionProgress.total}
-				message={submissionProgress.message || 'Submitting...'}
+				message={submissionProgress.message || t('summary.submitting')}
 			/>
 		</div>
 	{/if}
@@ -308,8 +309,8 @@
 						<button
 							type="button"
 							class="flex h-11 w-11 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-primary-500/10 hover:text-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-							aria-label="Edit item"
-							title="Edit item"
+							aria-label={t('summary.editItem')}
+							title={t('summary.editItem')}
 							disabled={isSubmitting}
 							onclick={() => editItem(index)}
 						>
@@ -318,8 +319,8 @@
 						<button
 							type="button"
 							class="hover:text-error-400 flex h-11 w-11 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-error-500/10 focus:outline-none focus:ring-2 focus:ring-error-500/50"
-							aria-label="Remove item"
-							title="Remove item"
+							aria-label={t('summary.removeItem')}
+							title={t('summary.removeItem')}
 							disabled={isSubmitting}
 							onclick={() => removeItem(index)}
 						>
@@ -335,16 +336,16 @@
 	<div class="mb-6 rounded-xl border border-neutral-700 bg-neutral-900 p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<BarChart3 class="text-neutral-400" size={16} strokeWidth={1.5} />
-			<span class="text-body-sm font-medium text-neutral-300">Summary</span>
+			<span class="text-body-sm font-medium text-neutral-300">{t('summary.summary')}</span>
 		</div>
 		<ul class="space-y-1.5 text-body-sm text-neutral-400">
 			<li class="flex items-center gap-2">
 				<Package class="text-neutral-500" size={16} strokeWidth={1.5} />
-				{confirmedItems.length} item{confirmedItems.length !== 1 ? 's' : ''} ready to submit
+				{t('summary.readyToSubmit', { count: confirmedItems.length })}
 			</li>
 			<li class="flex items-center gap-2">
 				<ImageIcon class="text-neutral-500" size={16} strokeWidth={1.5} />
-				{totalPhotos} photo{totalPhotos !== 1 ? 's' : ''} will be uploaded
+				{t('summary.willBeUploaded', { count: totalPhotos })}
 			</li>
 		</ul>
 	</div>
@@ -356,8 +357,7 @@
 				<AlertCircle class="text-error-400 mt-0.5 shrink-0" size={20} strokeWidth={2} />
 				<div class="min-w-0 flex-1">
 					<h4 class="text-error-300 mb-2 text-body-sm font-semibold">
-						{submissionErrors.length === 1 ? 'Error' : `${submissionErrors.length} Errors`} occurred during
-						submission
+						{t('summary.errorsOccurred')}
 					</h4>
 					<ul class="text-error-200/80 space-y-1.5 text-body-sm">
 						{#each submissionErrors as error, i (i)}
@@ -381,17 +381,17 @@
 		{#if !workflow.hasFailedItems() && !workflow.allItemsSuccessful()}
 			<Button variant="primary" full size="lg" loading={isSubmitting} onclick={submitAll}>
 				<Check size={20} strokeWidth={2} />
-				<span>Submit All Items ({confirmedItems.length})</span>
+				<span>{t('summary.submitAll', { count: confirmedItems.length })}</span>
 			</Button>
 		{:else if workflow.hasFailedItems()}
 			<Button variant="primary" full size="lg" loading={isSubmitting} onclick={retryFailed}>
 				<RefreshCw size={20} strokeWidth={1.5} />
-				<span>Retry Failed Items</span>
+				<span>{t('summary.retryFailed')}</span>
 			</Button>
 
 			<Button variant="secondary" full disabled={isSubmitting} onclick={continueWithSuccessful}>
 				<Check size={20} strokeWidth={1.5} />
-				<span>Continue with Successful Items</span>
+				<span>{t('summary.continueWithSuccessful')}</span>
 			</Button>
 		{/if}
 	</AppContainer>

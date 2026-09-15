@@ -11,6 +11,7 @@
 	import { completeLegacyLogin } from '$lib/services/bootstrap';
 	import Button from './Button.svelte';
 	import Modal from './Modal.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -24,7 +25,7 @@
 		e.preventDefault();
 
 		if (!email || !password) {
-			errorMessage = 'Please enter email and password';
+			errorMessage = t('session.error.emptyFields');
 			return;
 		}
 
@@ -38,12 +39,12 @@
 			// Reset form
 			email = '';
 			password = '';
-			showToast('Signed in successfully', 'success');
+			// Confirm session restoration to the user
+			showToast(t('session.success.restored'), 'success');
 			log.info('Re-authentication successful, session restored');
 		} catch (error) {
 			log.error('Re-authentication failed:', error);
-			errorMessage =
-				error instanceof Error ? error.message : 'Login failed. Please check your credentials.';
+			errorMessage = error instanceof Error ? error.message : t('session.error.failed');
 		} finally {
 			isSubmitting = false;
 		}
@@ -70,8 +71,8 @@
 				<CircleAlert class="text-warning-500" size={20} />
 			</div>
 			<div>
-				<h3 class="text-lg font-semibold text-neutral-200">Session Expired</h3>
-				<p class="text-sm text-neutral-400">Please log in again to continue</p>
+				<h3 class="text-lg font-semibold text-neutral-200">{t('session.title')}</h3>
+				<p class="text-sm text-neutral-400">{t('session.subtitle')}</p>
 			</div>
 		</div>
 	</div>
@@ -85,12 +86,12 @@
 		{/if}
 
 		<div>
-			<label for="reauth-email" class="label">Email</label>
+			<label for="reauth-email" class="label">{t('session.email')}</label>
 			<input
 				type="email"
 				id="reauth-email"
 				bind:value={email}
-				placeholder="Enter your email"
+				placeholder={t('session.emailPlaceholder')}
 				required
 				disabled={isSubmitting}
 				autocomplete="email"
@@ -99,12 +100,12 @@
 		</div>
 
 		<div>
-			<label for="reauth-password" class="label">Password</label>
+			<label for="reauth-password" class="label">{t('session.password')}</label>
 			<input
 				type="password"
 				id="reauth-password"
 				bind:value={password}
-				placeholder="Enter your password"
+				placeholder={t('session.passwordPlaceholder')}
 				required
 				disabled={isSubmitting}
 				autocomplete="current-password"
@@ -115,7 +116,7 @@
 		<div class="flex flex-col gap-2 pt-2">
 			<Button type="submit" variant="primary" full loading={isSubmitting}>
 				<Lock size={20} strokeWidth={2} />
-				<span>Sign In</span>
+				<span>{t('session.signIn')}</span>
 			</Button>
 
 			<button
@@ -124,7 +125,7 @@
 				onclick={handleLogout}
 				disabled={isSubmitting}
 			>
-				Sign out and return to login page
+				{t('session.signOut')}
 			</button>
 		</div>
 	</form>

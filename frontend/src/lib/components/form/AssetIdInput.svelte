@@ -10,6 +10,7 @@
 	import { QrCode } from 'lucide-svelte';
 	import QrScanner from '$lib/components/QrScanner.svelte';
 	import { resolveQrUrl } from '$lib/utils/qrUrl';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		value: string | null;
@@ -70,8 +71,10 @@
 <div>
 	{#if showLabel}
 		<div class="mb-1 flex items-baseline gap-2">
-			<label for="asset-id-input" class="text-body-sm font-medium text-neutral-300">Asset ID</label>
-			<span class="text-xs text-neutral-500">Optional – auto-assigned if blank</span>
+			<label for="asset-id-input" class="text-body-sm font-medium text-neutral-300"
+				>{t('form.assetId')}</label
+			>
+			<span class="text-xs text-neutral-500">{t('form.assetIdHelp')}</span>
 		</div>
 	{/if}
 
@@ -93,8 +96,8 @@
 			onclick={() => (showScanner = true)}
 			{disabled}
 			class="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-600 bg-neutral-800 text-neutral-400 transition-colors hover:border-neutral-500 hover:bg-neutral-700 hover:text-neutral-200 disabled:opacity-50"
-			aria-label="Scan QR code"
-			title="Scan QR code"
+			aria-label={t('form.scanQr')}
+			title={t('form.scanQr')}
 		>
 			<QrCode size={18} strokeWidth={1.5} />
 		</button>
@@ -102,5 +105,5 @@
 </div>
 
 {#if showScanner}
-	<QrScanner onScan={handleScan} onClose={handleScannerClose} title="Scan Asset ID QR Code" />
+	<QrScanner onScan={handleScan} onClose={handleScannerClose} title={t('form.scanAssetId')} />
 {/if}

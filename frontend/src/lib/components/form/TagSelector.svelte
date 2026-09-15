@@ -9,6 +9,7 @@
 	import { tagStore } from '$lib/stores/tags.svelte';
 	import type { FormSize } from './types';
 	import { getLabelClass } from './types';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		selectedIds: string[];
@@ -32,13 +33,13 @@
 
 {#if tagStore.loading}
 	<div>
-		<span class={labelClass}>Tags</span>
-		<p class="text-sm text-neutral-500">Loading tags...</p>
+		<span class={labelClass}>{t('form.tags')}</span>
+		<p class="text-sm text-neutral-500">{t('form.loadingTags')}</p>
 	</div>
 {:else if tagStore.tags.length > 0}
 	<div>
-		<span class={labelClass}>Tags</span>
-		<div class="flex flex-wrap gap-2" role="group" aria-label="Select tags">
+		<span class={labelClass}>{t('form.tags')}</span>
+		<div class="flex flex-wrap gap-2" role="group" aria-label={t('form.tags')}>
 			{#each tagStore.tags as tag (tag.id)}
 				{@const isSelected = selectedIds.includes(tag.id)}
 				<button

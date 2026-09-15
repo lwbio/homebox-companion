@@ -4,6 +4,7 @@
 	import Button from './Button.svelte';
 	import type { ThumbnailTransform } from '$lib/types';
 	import { CANVAS_COLORS } from '$lib/utils/canvas-colors';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		images: { file: File; dataUrl: string }[];
@@ -429,7 +430,7 @@
 				type="button"
 				class="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100"
 				onclick={onClose}
-				aria-label="Close"
+				aria-label={t('common.close')}
 			>
 				<X size={20} strokeWidth={1.5} />
 			</button>
@@ -551,7 +552,7 @@
 						type="button"
 						class="relative z-10 flex min-h-touch min-w-touch flex-shrink-0 items-center justify-center rounded-lg bg-neutral-800 p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100"
 						onclick={rotateLeft90}
-						aria-label="Rotate 90° left"
+						aria-label={t('thumbnail.rotateLeft')}
 						title="-90°"
 					>
 						<RotateCcw size={20} strokeWidth={1.5} />
@@ -570,7 +571,7 @@
 						type="button"
 						class="relative z-10 flex min-h-touch min-w-touch flex-shrink-0 items-center justify-center rounded-lg bg-neutral-800 p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100"
 						onclick={rotateRight90}
-						aria-label="Rotate 90° right"
+						aria-label={t('thumbnail.rotateRight')}
 						title="+90°"
 					>
 						<RotateCw size={20} strokeWidth={1.5} />

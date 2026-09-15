@@ -10,6 +10,7 @@
 		handleDisabledNavClick,
 		resolveNavHref,
 	} from '$lib/navigation/config';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	// Get current path reactively
 	let currentPath = $derived($page.url.pathname);
@@ -25,7 +26,7 @@
 </script>
 
 <!-- Desktop/Tablet header navigation - icons with labels -->
-<nav class="flex items-center gap-1" aria-label="Main navigation">
+<nav class="flex items-center gap-1" aria-label={t('common.mainNavigation')}>
 	{#each navItems as item (item.id)}
 		{@const active = isNavItemActive(item, currentPath)}
 		{@const disabled = item.disabled ?? false}
@@ -33,12 +34,12 @@
 			<button
 				type="button"
 				aria-disabled="true"
-				title={item.disabledTooltip}
+				title={t(item.disabledTooltip ?? '')}
 				onclick={() => handleDisabledNavClick(item)}
 				class="flex cursor-not-allowed items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-neutral-600"
 			>
 				<NavIcon icon={item.icon} size="sm" />
-				<span>{item.label}</span>
+				<span>{t(item.label)}</span>
 			</button>
 		{:else}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved via resolveNavHref() -->
@@ -51,7 +52,7 @@
 					: 'text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200'}"
 			>
 				<NavIcon icon={item.icon} size="sm" />
-				<span>{item.label}</span>
+				<span>{t(item.label)}</span>
 			</a>
 		{/if}
 	{/each}

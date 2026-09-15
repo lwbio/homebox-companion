@@ -9,6 +9,7 @@
 	import { getInitPromise } from '$lib/services/bootstrap';
 	import Button from '$lib/components/Button.svelte';
 	import CreatedItemsModal from '$lib/components/CreatedItemsModal.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	const workflow = scanWorkflow;
 
@@ -62,7 +63,7 @@
 </script>
 
 <svelte:head>
-	<title>Success - Homebox Companion</title>
+	<title>{t('success.title')}</title>
 </svelte:head>
 
 <div class="animate-in flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
@@ -84,7 +85,7 @@
 
 	<!-- Heading -->
 	<h2 class="mb-3 text-h1 text-neutral-100">
-		{hasIncompleteItems ? 'Items need attention' : 'Success!'}
+		{hasIncompleteItems ? t('success.needsAttention') : t('success.heading')}
 	</h2>
 
 	{#if hasIncompleteItems}
@@ -92,10 +93,7 @@
 			class="mb-6 w-full max-w-sm rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-left text-body-sm text-warning-300"
 			role="status"
 		>
-			<p>
-				Some items were created with incomplete details or attachments. Review and finish them in
-				Homebox; they will not be created again by Retry Failed Items.
-			</p>
+			<p>{t('success.incompleteItems')}</p>
 			{#if submissionErrors.length > 0}
 				<ul class="mt-2 list-inside list-disc space-y-2">
 					{#each submissionErrors as error, index (index)}
@@ -109,7 +107,7 @@
 	<!-- Specific feedback with count and location -->
 	{#if result}
 		<p class="mb-6 text-body text-neutral-300">
-			{result.itemCount} item{result.itemCount !== 1 ? 's' : ''} added to {result.locationName}
+			{t('success.itemsAdded', { count: result.itemCount, location: result.locationName })}
 		</p>
 
 		<!-- Statistics card -->
@@ -120,7 +118,7 @@
 						{result.itemCount}
 					</div>
 					<div class="text-caption text-neutral-500">
-						Item{result.itemCount !== 1 ? 's' : ''}
+						{t('success.itemsLabel')}
 					</div>
 				</div>
 				{#if !hasIncompleteItems}
@@ -128,15 +126,13 @@
 						<div class="text-2xl font-bold text-primary-400">
 							{result.photoCount}
 						</div>
-						<div class="text-caption text-neutral-500">
-							Photo{result.photoCount !== 1 ? 's' : ''}
-						</div>
+						<div class="text-caption text-neutral-500">{t('success.photosLabel')}</div>
 					</div>
 				{/if}
 			</div>
 		</div>
 	{:else}
-		<p class="mb-8 text-body text-neutral-400">Items have been added to your inventory</p>
+		<p class="mb-8 text-body text-neutral-400">{t('success.itemsAddedMessage')}</p>
 	{/if}
 
 	<!-- Action buttons -->
@@ -146,11 +142,11 @@
 			<Camera size={20} strokeWidth={1.5} />
 			<span>
 				{#if workflow.state.parentItemName}
-					Scan More in {workflow.state.parentItemName}
+					{t('success.scanMore', { name: workflow.state.parentItemName })}
 				{:else if result?.locationName}
-					Scan More in {result.locationName}
+					{t('success.scanMore', { name: result.locationName })}
 				{:else}
-					Scan More Items
+					{t('success.scanMoreItems')}
 				{/if}
 			</span>
 		</Button>
@@ -158,14 +154,14 @@
 		<!-- Change location -->
 		<Button variant="secondary" full onclick={startOver}>
 			<MapPin size={20} strokeWidth={1.5} />
-			<span>Choose New Location</span>
+			<span>{t('success.chooseNewLocation')}</span>
 		</Button>
 
 		<!-- See Items (view created items with details) -->
 		{#if result?.createdItems && result.createdItems.length > 0}
 			<Button variant="secondary" full onclick={() => (showItemsModal = true)}>
 				<Eye size={20} strokeWidth={1.5} />
-				<span>See Items</span>
+				<span>{t('success.seeItems')}</span>
 			</Button>
 		{/if}
 	</div>

@@ -9,6 +9,7 @@
 	import Button from './Button.svelte';
 	import Loader from './Loader.svelte';
 	import Modal from './Modal.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	const log = createLogger({ prefix: 'ItemPicker' });
 
@@ -70,7 +71,7 @@
 			await loadThumbnails(items);
 		} catch (error) {
 			log.error('Failed to load items', error);
-			showToast('Failed to load items', 'error');
+			showToast(t('itemPicker.error.loadFailed'), 'error');
 			items = [];
 		} finally {
 			isLoading = false;
@@ -129,7 +130,7 @@
 	}
 </script>
 
-<Modal open={true} title="Select Container Item" onclose={onClose}>
+<Modal open={true} title={t('itemPicker.title')} onclose={onClose}>
 	<!-- Search -->
 	<div class="mb-4">
 		<div class="relative">
@@ -138,7 +139,7 @@
 			</div>
 			<input
 				type="text"
-				placeholder="Search items..."
+				placeholder={t('itemPicker.search')}
 				bind:value={searchQuery}
 				class="input-with-icon"
 			/>
@@ -154,10 +155,10 @@
 		{:else if filteredItems.length === 0}
 			<div class="py-12 text-center text-neutral-500">
 				{#if searchQuery}
-					<p>No items found for "{searchQuery}"</p>
+					<p>{t('itemPicker.noResults', { query: searchQuery })}</p>
 				{:else}
-					<p>No items in this location</p>
-					<p class="mt-2 text-body-sm">Add some items first</p>
+					<p>{t('itemPicker.noItems')}</p>
+					<p class="mt-2 text-body-sm">{t('itemPicker.addFirst')}</p>
 				{/if}
 			</div>
 		{:else}
@@ -184,7 +185,7 @@
 							{item.name}
 						</p>
 						<p class="text-body-sm text-neutral-500">
-							Quantity: {item.quantity}
+							{t('itemPicker.quantity', { count: item.quantity })}
 						</p>
 					</div>
 
@@ -202,11 +203,11 @@
 		{#if currentItemId}
 			<Button variant="secondary" onclick={clearSelection}>
 				<X size={20} strokeWidth={1.5} />
-				<span>Clear Selection</span>
+				<span>{t('itemPicker.clearSelection')}</span>
 			</Button>
 		{/if}
 		<Button variant="ghost" onclick={onClose}>
-			<span>Cancel</span>
+			<span>{t('common.cancel')}</span>
 		</Button>
 	{/snippet}
 </Modal>

@@ -7,6 +7,7 @@
 	import { showToast, setLoading } from '$lib/stores/ui.svelte';
 	import { authLogger as log } from '$lib/utils/logger';
 	import { completeLegacyLogin, getInitPromise } from '$lib/services/bootstrap';
+	import { t } from '$lib/i18n/reactive.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import { onMount } from 'svelte';
 
@@ -64,12 +65,12 @@
 		e.preventDefault();
 
 		if (!email || !password) {
-			showToast('Please enter email and password', 'warning');
+			showToast(t('login.error.emptyFields'), 'warning');
 			return;
 		}
 
 		isSubmitting = true;
-		setLoading(true, 'Signing in...');
+		setLoading(true, t('login.signingIn'));
 
 		try {
 			const response = await auth.login(email, password);
@@ -78,10 +79,7 @@
 			goto(resolve('/location'));
 		} catch (error) {
 			log.error('Login failed:', error);
-			showToast(
-				error instanceof Error ? error.message : 'Login failed. Please check your credentials.',
-				'error'
-			);
+			showToast(error instanceof Error ? error.message : t('login.error.failed'), 'error');
 		} finally {
 			isSubmitting = false;
 			setLoading(false);
@@ -94,7 +92,7 @@
 </script>
 
 <svelte:head>
-	<title>Login - Homebox Companion</title>
+	<title>{t('login.title')}</title>
 </svelte:head>
 
 <div class="animate-in flex flex-col items-center justify-center pb-16 pt-8">
@@ -104,7 +102,7 @@
 			<div
 				class="h-12 w-12 animate-spin rounded-full border-4 border-primary-500/30 border-t-primary-500"
 			></div>
-			<p class="text-sm text-neutral-400">Loading...</p>
+			<p class="text-sm text-neutral-400">{t('common.loading')}</p>
 		</div>
 	{:else if authStore.isLegacy && !authStore.isAuthenticated}
 		<!-- Refined logo icon -->
@@ -125,19 +123,19 @@
 		</div>
 
 		<!-- Typography with improved hierarchy -->
-		<h1 class="mb-2 px-4 text-center text-h1 text-neutral-100">Welcome back</h1>
+		<h1 class="mb-2 px-4 text-center text-h1 text-neutral-100">{t('login.welcome')}</h1>
 		<p class="mb-6 max-w-xs px-4 text-center text-body text-neutral-400">
-			Sign in to continue to Homebox Companion
+			{t('login.subtitle')}
 		</p>
 
 		<form class="w-full max-w-sm space-y-5 px-4" onsubmit={handleSubmit}>
 			<div>
-				<label for="email" class="label">Email</label>
+				<label for="email" class="label">{t('login.email')}</label>
 				<input
 					type="email"
 					id="email"
 					bind:value={email}
-					placeholder="you@example.com"
+					placeholder={t('login.emailPlaceholder')}
 					required
 					autocomplete="email"
 					class="input"
@@ -145,13 +143,13 @@
 			</div>
 
 			<div>
-				<label for="password" class="label">Password</label>
+				<label for="password" class="label">{t('login.password')}</label>
 				<div class="relative">
 					<input
 						type={showPassword ? 'text' : 'password'}
 						id="password"
 						bind:value={password}
-						placeholder="Enter your password"
+						placeholder={t('login.passwordPlaceholder')}
 						required
 						autocomplete="current-password"
 						class="input pr-12"
@@ -160,7 +158,7 @@
 						type="button"
 						onclick={togglePasswordVisibility}
 						class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
-						aria-label={showPassword ? 'Hide password' : 'Show password'}
+						aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
 					>
 						{#if showPassword}
 							<!-- Eye off icon -->
@@ -175,7 +173,7 @@
 
 			<div class="pt-2">
 				<Button type="submit" variant="primary" full loading={isSubmitting}>
-					<span>Sign In</span>
+					<span>{t('login.signIn')}</span>
 					<ArrowRight size={20} strokeWidth={2} />
 				</Button>
 			</div>

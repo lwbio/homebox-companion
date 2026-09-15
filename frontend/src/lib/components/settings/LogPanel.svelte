@@ -11,6 +11,7 @@
 	import type { Snippet } from 'svelte';
 	import { RefreshCw, Download, Share, Trash2, Maximize2, ChevronDown } from 'lucide-svelte';
 	import FullscreenPanel from '$lib/components/FullscreenPanel.svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		/** Panel title */
@@ -104,8 +105,8 @@
 			class="btn-icon-touch"
 			onclick={onRefresh}
 			disabled={refreshDisabled || refreshLoading}
-			title="Refresh"
-			aria-label="Refresh"
+			title={t('common.refresh')}
+			aria-label={t('common.refresh')}
 		>
 			<RefreshCw class={refreshLoading ? 'animate-spin' : ''} size={20} strokeWidth={1.5} />
 		</button>
@@ -116,8 +117,8 @@
 			class="btn-icon-touch"
 			onclick={onDownload}
 			disabled={downloadDisabled}
-			title="Download"
-			aria-label="Download"
+			title={t('common.download')}
+			aria-label={t('common.download')}
 		>
 			<Download size={20} strokeWidth={1.5} />
 		</button>
@@ -128,8 +129,8 @@
 			class="btn-icon-touch"
 			onclick={onExport}
 			disabled={exportDisabled}
-			title="Export"
-			aria-label="Export"
+			title={t('common.export')}
+			aria-label={t('common.export')}
 		>
 			<Share size={20} strokeWidth={1.5} />
 		</button>
@@ -140,8 +141,8 @@
 			class="btn-icon-touch"
 			onclick={onClear}
 			disabled={clearDisabled}
-			title="Clear"
-			aria-label="Clear"
+			title={t('common.clear')}
+			aria-label={t('common.clear')}
 		>
 			<Trash2 size={20} strokeWidth={1.5} />
 		</button>
@@ -163,8 +164,8 @@
 						type="button"
 						class="btn-icon-touch"
 						onclick={() => (isFullscreen = true)}
-						title="Expand fullscreen"
-						aria-label="View fullscreen"
+						title={t('common.expandFullscreen')}
+						aria-label={t('common.expandFullscreen')}
 					>
 						<Maximize2 size={20} strokeWidth={1.5} />
 					</button>
@@ -189,7 +190,7 @@
 			<div
 				class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
 			></div>
-			<span>Loading...</span>
+			<span>{t('common.loading')}</span>
 		{:else}
 			<span>{toggleLabel}</span>
 			<ChevronDown

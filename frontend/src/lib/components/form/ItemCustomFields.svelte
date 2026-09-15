@@ -10,6 +10,7 @@
 	import { ChevronDown, Layers } from 'lucide-svelte';
 	import type { FormSize } from './types';
 	import { getInputClass, getLabelClass } from './types';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		customFields: Record<string, string>;
@@ -52,9 +53,11 @@
 	>
 		<ChevronDown class="transition-transform {expanded ? 'rotate-180' : ''}" size={16} />
 		<Layers size={14} strokeWidth={1.5} class="text-primary-400" />
-		<span>Custom Fields</span>
+		<span>{t('form.customFields')}</span>
 		{#if hasData}
-			<span class="rounded bg-primary-500/20 px-1.5 py-0.5 text-xs text-primary-300">Has data</span>
+			<span class="rounded bg-primary-500/20 px-1.5 py-0.5 text-xs text-primary-300"
+				>{t('form.hasData')}</span
+			>
 		{/if}
 	</button>
 
@@ -68,7 +71,7 @@
 						id="{idPrefix}-cf-{key}"
 						{value}
 						oninput={(e) => handleInput(key, e.currentTarget.value)}
-						placeholder="AI-populated value"
+						placeholder={t('form.aiPopulated')}
 						class={inputClass}
 						{disabled}
 					/>

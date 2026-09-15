@@ -159,25 +159,12 @@ export class NetworkError extends Error {
 // reloaded. Consider this when writing integration tests.
 // =============================================================================
 
-let refreshPromise: Promise<boolean> | null = null;
-
 /**
  * Attempt to refresh the token once, preventing concurrent refresh attempts.
- * Uses a single promise reference with .finally() cleanup for atomic state management.
+ * Delegates to refreshToken() which has built-in deduplication.
  */
 async function attemptRefreshOnce(): Promise<boolean> {
-	// If a refresh is already in progress, return the existing promise
-	if (refreshPromise) {
-		return refreshPromise;
-	}
-
-	// Start a new refresh and store the promise
-	// Use .finally() to ensure cleanup happens atomically after the promise settles
-	refreshPromise = refreshToken().finally(() => {
-		refreshPromise = null;
-	});
-
-	return refreshPromise;
+	return refreshToken();
 }
 
 /**

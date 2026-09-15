@@ -9,6 +9,7 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import LogPanel from '$lib/components/settings/LogPanel.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	const service = settingsService;
 
@@ -51,11 +52,11 @@
 <section class="card space-y-4">
 	<h2 class="flex items-center gap-2 text-body-lg font-semibold text-neutral-100">
 		{@render logsIcon('h-5 w-5 text-primary-400')}
-		Logs & Debugging
+		{t('settings.logs')}
 	</h2>
 
 	<p class="text-body-sm text-neutral-400">
-		View application logs, frontend console output, and AI interaction history for debugging.
+		{t('settings.logsDescription')}
 	</p>
 
 	<button
@@ -64,7 +65,7 @@
 		onclick={() => (showLogsSection = !showLogsSection)}
 	>
 		{@render logsIcon('h-5 w-5 text-primary-400')}
-		<span>View Logs</span>
+		<span>{t('settings.viewLogs')}</span>
 		<ChevronDown
 			class="ml-auto transition-transform {showLogsSection ? 'rotate-180' : ''}"
 			size={16}
@@ -74,14 +75,14 @@
 	{#if showLogsSection}
 		<!-- Application Logs -->
 		<LogPanel
-			title="Application Logs"
-			toggleLabel="Show Server Logs"
+			title={t('settings.applicationLogs')}
+			toggleLabel={t('settings.showServerLogs')}
 			isExpanded={service.showServerLogs}
 			onToggle={() => service.toggleServerLogs()}
 			isLoading={service.isLoading.serverLogs}
 			error={service.errors.serverLogs}
 			isEmpty={!service.serverLogs}
-			emptyMessage="No server logs available."
+			emptyMessage={t('settings.noServerLogs')}
 			subtitleLeft={service.serverLogs?.filename ?? undefined}
 			subtitleRight={serverLogsSubtitleRight}
 			fullscreenSubtitle={serverLogsFullscreenSubtitle}
@@ -107,14 +108,14 @@
 
 		<!-- Frontend Logs -->
 		<LogPanel
-			title="Frontend Logs"
-			toggleLabel="Show Frontend Logs"
-			description="Browser console logs stored in memory. Cleared on page refresh."
+			title={t('settings.frontendLogs')}
+			toggleLabel={t('settings.showFrontendLogs')}
+			description={t('settings.frontendLogsDescription')}
 			isExpanded={service.showFrontendLogs}
 			onToggle={() => service.toggleFrontendLogs()}
 			isEmpty={service.frontendLogs.length === 0}
-			emptyMessage="No frontend logs available. Logs will appear here as you use the app."
-			subtitleLeft="In-memory buffer"
+			emptyMessage={t('settings.noFrontendLogs')}
+			subtitleLeft={t('settings.inMemoryBuffer')}
 			subtitleRight={`${service.frontendLogs.length} ${service.frontendLogs.length === 1 ? 'entry' : 'entries'}`}
 			fullscreenSubtitle={`In-memory buffer • ${service.frontendLogs.length} ${service.frontendLogs.length === 1 ? 'entry' : 'entries'}`}
 			onRefresh={() => service.refreshFrontendLogs()}
@@ -133,14 +134,14 @@
 
 		<!-- Chat Transcript -->
 		<LogPanel
-			title="Chat Transcript"
-			toggleLabel="Show Chat Transcript"
-			description="Export your conversation history. Clear chat from the chat window."
+			title={t('settings.chatTranscript')}
+			toggleLabel={t('settings.showChatTranscript')}
+			description={t('settings.chatTranscriptDescription')}
 			isExpanded={showChatTranscript}
 			onToggle={() => (showChatTranscript = !showChatTranscript)}
 			isEmpty={chatStore.messageCount === 0}
-			emptyMessage="No chat messages. Start a conversation in the chat window."
-			subtitleLeft="Conversation history"
+			emptyMessage={t('settings.noChatMessages')}
+			subtitleLeft={t('settings.conversationHistory')}
 			subtitleRight={`${chatStore.messageCount} ${chatStore.messageCount === 1 ? 'message' : 'messages'}`}
 			fullscreenSubtitle={`Conversation history • ${chatStore.messageCount} ${chatStore.messageCount === 1 ? 'message' : 'messages'}`}
 			onExport={() => service.exportChatTranscript()}
@@ -158,15 +159,15 @@
 
 		<!-- LLM Debug Log -->
 		<LogPanel
-			title="LLM Debug Log"
-			toggleLabel="Show LLM Debug Log"
-			description="Raw LLM request/response pairs. Technical debugging data for developers."
+			title={t('settings.llmDebugLog')}
+			toggleLabel={t('settings.showLlmDebugLog')}
+			description={t('settings.llmDebugDescription')}
 			isExpanded={service.showLLMDebugLog}
 			onToggle={() => service.toggleLLMDebugLog()}
 			isLoading={service.isLoading.llmDebugLog}
 			error={service.errors.llmDebugLog}
 			isEmpty={!service.llmDebugLog}
-			emptyMessage="No LLM debug log files found."
+			emptyMessage={t('settings.noLlmLogs')}
 			subtitleLeft={service.llmDebugLog?.filename ?? undefined}
 			subtitleRight={llmDebugLogsSubtitleRight}
 			fullscreenSubtitle={llmDebugLogsFullscreenSubtitle}

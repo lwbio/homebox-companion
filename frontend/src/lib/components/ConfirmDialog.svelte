@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Button from './Button.svelte';
 	import Card from './Card.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		open: boolean;
@@ -16,8 +17,8 @@
 		open = false,
 		title,
 		message,
-		confirmLabel = 'Confirm',
-		cancelLabel = 'Cancel',
+		confirmLabel = t('confirm.accept'),
+		cancelLabel = t('confirm.cancel'),
 		onConfirm,
 		onCancel,
 	}: Props = $props();

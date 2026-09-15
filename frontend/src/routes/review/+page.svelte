@@ -29,6 +29,7 @@
 	import InfoTooltip from '$lib/components/InfoTooltip.svelte';
 	import { workflowLogger as log } from '$lib/utils/logger';
 	import { longpress } from '$lib/actions/longpress';
+	import { t } from '$lib/i18n/reactive.svelte';
 	import { SquarePen, ImageIcon, ChevronsRight, Check } from 'lucide-svelte';
 
 	// Capture limits (loaded from config, with safe defaults)
@@ -289,7 +290,7 @@
 
 		const sourceImage = images[editedItem.sourceImageIndex];
 		if (!sourceImage) {
-			showToast('Original image not found', 'error');
+			showToast(t('review.error.originalNotFound'), 'error');
 			return;
 		}
 
@@ -334,7 +335,10 @@
 			}
 		} catch (error) {
 			log.error('AI correction failed:', error);
-			showToast(error instanceof Error ? error.message : 'Correction failed', 'error');
+			showToast(
+				error instanceof Error ? error.message : t('review.error.correctionFailed'),
+				'error'
+			);
 		} finally {
 			isProcessing = false;
 		}
@@ -396,18 +400,18 @@
 </script>
 
 <svelte:head>
-	<title>Review Items - Homebox Companion</title>
+	<title>{t('review.title')}</title>
 </svelte:head>
 
 <div class="animate-in pb-32">
 	<StepIndicator currentStep={3} />
 
-	<h2 class="mb-1 text-h2 text-neutral-100">Review Items</h2>
-	<p class="mb-6 text-body-sm text-neutral-400">Edit or skip detected items</p>
+	<h2 class="mb-1 text-h2 text-neutral-100">{t('review.heading')}</h2>
+	<p class="mb-6 text-body-sm text-neutral-400">{t('review.subheading')}</p>
 
 	<BackLink
 		href={workflow.isEditingFailedItem ? '/summary' : '/capture'}
-		label={workflow.isEditingFailedItem ? 'Back to Summary' : 'Back to Capture'}
+		label={workflow.isEditingFailedItem ? t('review.backToSummary') : t('review.backToCapture')}
 		onclick={goBack}
 		disabled={isProcessing}
 	/>
@@ -427,16 +431,16 @@
 						type="button"
 						class="absolute bottom-3 right-3 flex min-h-[44px] items-center gap-2 rounded-lg bg-black/70 px-3 py-2.5 text-sm text-white transition-all hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/50 md:opacity-0 md:group-hover:opacity-100"
 						onclick={openThumbnailEditor}
-						aria-label="Edit thumbnail image"
+						aria-label={t('review.editThumbnail')}
 					>
 						<SquarePen size={16} strokeWidth={1.5} />
-						<span>Edit Thumbnail</span>
+						<span>{t('review.editThumbnail')}</span>
 					</button>
 					{#if editedItem.customThumbnail}
 						<span
 							class="absolute left-3 top-3 rounded bg-primary-600/90 px-2 py-1 text-xs font-medium text-white"
 						>
-							Custom
+							{t('review.customBadge')}
 						</span>
 					{/if}
 				</div>
@@ -446,8 +450,8 @@
 					class="flex aspect-video flex-col items-center justify-center bg-neutral-800 text-neutral-500"
 				>
 					<ImageIcon class="mb-2 opacity-40" size={64} strokeWidth={1} />
-					<p class="text-body-sm">No image available</p>
-					<p class="mt-1 text-caption">Add photos below</p>
+					<p class="text-body-sm">{t('review.noImage')}</p>
+					<p class="mt-1 text-caption">{t('review.addPhotosBelow')}</p>
 				</div>
 			{/if}
 
@@ -458,11 +462,11 @@
 				>
 					<DuplicateWarningIcon match={editedItem.duplicate_match} />
 					<div class="text-body-sm">
-						<p class="font-medium text-warning-300">Possible Duplicate</p>
-						<p class="text-warning-200/80">This item may already exist in your inventory</p>
+						<p class="font-medium text-warning-300">{t('review.duplicateWarning')}</p>
+						<p class="text-warning-200/80">{t('review.duplicateDescription')}</p>
 						<p class="mt-0.5 text-xs text-warning-200/60">
-							Serial number "{editedItem.duplicate_match.serial_number}" found in "{editedItem
-								.duplicate_match.item_name}"
+							{t('duplicate.serialExists', { serial: editedItem.duplicate_match.serial_number })}
+							{editedItem.duplicate_match.item_name}
 						</p>
 					</div>
 				</div>
@@ -532,7 +536,7 @@
 		</div>
 	{:else}
 		<div class="py-12 text-center text-neutral-500">
-			<p>No items to review</p>
+			<p>{t('review.noItems')}</p>
 		</div>
 	{/if}
 
@@ -556,7 +560,7 @@
 			<!-- Item counter in footer for mobile - positioned above bottom nav -->
 			<div class="flex items-center justify-center py-3 md:hidden">
 				<span class="text-body-sm font-medium text-neutral-300">
-					Item {currentIndex + 1} of {detectedItems.length}
+					{t('review.itemCounter', { n: currentIndex + 1, total: detectedItems.length })}
 				</span>
 			</div>
 			<!-- Action buttons -->
@@ -565,7 +569,7 @@
 					<div class="flex-1">
 						<Button variant="secondary" full onclick={skipItem} disabled={isProcessing}>
 							<ChevronsRight size={20} strokeWidth={1.5} />
-							<span>Skip</span>
+							<span>{t('review.skip')}</span>
 						</Button>
 					</div>
 				{/if}
@@ -578,10 +582,12 @@
 				>
 					<Button variant="primary" full onclick={confirmItem} disabled={isProcessing}>
 						<Check size={20} strokeWidth={2} />
-						<span>{workflow.isEditingFailedItem ? 'Save Changes' : 'Confirm'}</span>
+						<span
+							>{workflow.isEditingFailedItem ? t('review.saveChanges') : t('review.confirm')}</span
+						>
 					</Button>
 					{#if !workflow.isEditingFailedItem}
-						<InfoTooltip text="Long-press to confirm all remaining items at once." />
+						<InfoTooltip text={t('review.confirmAllHint')} />
 					{/if}
 				</div>
 			</div>
@@ -592,12 +598,10 @@
 <!-- Confirm All Dialog -->
 <ConfirmDialog
 	open={showConfirmAllDialog}
-	title="Confirm All Remaining Items"
-	message="Confirm all {remainingCount} remaining {remainingCount === 1
-		? 'item'
-		: 'items'} and proceed to review & submit?"
-	confirmLabel="Confirm All"
-	cancelLabel="Cancel"
+	title={t('review.confirmAllTitle')}
+	message={t('review.confirmAllMessage', { n: remainingCount })}
+	confirmLabel={t('review.confirmAllButton')}
+	cancelLabel={t('common.cancel')}
 	onConfirm={handleConfirmAll}
 	onCancel={() => (showConfirmAllDialog = false)}
 />

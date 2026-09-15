@@ -20,6 +20,7 @@
 	import StatusIcon from '$lib/components/StatusIcon.svelte';
 	import { AssetIdInput } from '$lib/components/form';
 	import InfoTooltip from '$lib/components/InfoTooltip.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 	import {
 		TriangleAlert,
 		RefreshCw,
@@ -186,7 +187,10 @@
 	/** Check if file exceeds size limit and show toast if so */
 	function isFileTooLarge(file: File): boolean {
 		if (file.size > maxFileSizeMb * 1024 * 1024) {
-			showToast(`File ${file.name} is too large (max ${maxFileSizeMb}MB)`, 'warning');
+			showToast(
+				t('capture.error.fileTooLarge', { name: file.name, maxSize: maxFileSizeMb }),
+				'warning'
+			);
 			return true;
 		}
 		return false;
@@ -201,7 +205,7 @@
 
 		for (const file of Array.from(input.files)) {
 			if (currentCount >= maxImages) {
-				showToast(`Maximum ${maxImages} images allowed`, 'warning');
+				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
 				break;
 			}
 
@@ -240,7 +244,7 @@
 		for (const file of Array.from(input.files)) {
 			// Check total image limit (including additional images)
 			if (newFiles.length >= remainingSlots) {
-				showToast(`Maximum ${maxImages} images allowed`, 'warning');
+				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
 				break;
 			}
 
@@ -286,7 +290,7 @@
 
 		for (const file of imageFiles) {
 			if (newFiles.length >= remainingSlots) {
-				showToast(`Maximum ${maxImages} images allowed`, 'warning');
+				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
 				break;
 			}
 
@@ -430,14 +434,14 @@
 </script>
 
 <svelte:head>
-	<title>Capture Items - Homebox Companion</title>
+	<title>{t('capture.title')}</title>
 </svelte:head>
 
 <div class="animate-in pb-28">
 	<StepIndicator currentStep={2} />
 
-	<h2 class="mb-1 text-h2 text-neutral-100">Capture Items</h2>
-	<p class="mb-6 text-body-sm text-neutral-400">Add photos and configure detection options</p>
+	<h2 class="mb-1 text-h2 text-neutral-100">{t('capture.heading')}</h2>
+	<p class="mb-6 text-body-sm text-neutral-400">{t('capture.subheading')}</p>
 
 	<!-- Current location display -->
 	{#if locationPath}
@@ -446,7 +450,7 @@
 			<button
 				type="button"
 				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 text-neutral-400 transition-colors hover:bg-primary-500/20 hover:text-neutral-200"
-				aria-label="Change location"
+				aria-label={t('capture.changeLocation')}
 				onclick={goBack}
 				disabled={isAnalyzing}
 			>
@@ -457,12 +461,12 @@
 			<div class="flex flex-col gap-0.5">
 				<div class="flex items-center gap-2">
 					<MapPin class="shrink-0" size={16} strokeWidth={1.5} />
-					<span>Items will be added to:</span>
+					<span>{t('capture.itemsWillBeAdded')}</span>
 				</div>
 				<span class="pl-6 font-semibold text-neutral-200">{locationPath}</span>
 				{#if parentItemName}
 					<div class="flex items-center gap-2 pl-6">
-						<span class="text-neutral-500">Inside:</span>
+						<span class="text-neutral-500">{t('capture.inside')}</span>
 						<span class="font-semibold text-primary-400">{parentItemName}</span>
 					</div>
 				{/if}
@@ -476,7 +480,9 @@
 			<AnalysisProgressBar
 				current={progress.current}
 				total={progress.total}
-				message={status === 'reviewing' ? 'Analysis complete!' : progress.message || 'Analyzing...'}
+				message={status === 'reviewing'
+					? t('capture.analysisComplete')
+					: progress.message || t('capture.analyzing')}
 				onComplete={handleAnalysisComplete}
 			/>
 		</div>
@@ -494,26 +500,32 @@
 
 				<div class="flex-1">
 					<h3 class="mb-1 text-body font-semibold text-warning-100">
-						Some Images Failed to Analyze
+						{t('capture.someFailed')}
 					</h3>
 					<p class="mb-3 text-body-sm text-warning-200/80">
-						{failedImageCount} of {images.length} image(s) could not be processed. You can retry the failed
-						images, continue with the successful ones, or remove the failed images.
+						{failedImageCount} / {images.length}
+						{t('capture.someFailed').toLowerCase()}
 					</p>
 
 					<!-- Stats -->
 					<div class="mb-4 flex gap-4 text-caption">
 						<div class="flex items-center gap-1.5">
 							<div class="bg-success-400 h-2 w-2 rounded-full"></div>
-							<span class="text-neutral-300">{succeededImageCount} succeeded</span>
+							<span class="text-neutral-300"
+								>{t('capture.succeeded', { count: succeededImageCount })}</span
+							>
 						</div>
 						<div class="flex items-center gap-1.5">
 							<div class="bg-error-400 h-2 w-2 rounded-full"></div>
-							<span class="text-neutral-300">{failedImageCount} failed</span>
+							<span class="text-neutral-300"
+								>{t('capture.failed', { count: failedImageCount })}</span
+							>
 						</div>
 						<div class="flex items-center gap-1.5">
 							<div class="h-2 w-2 rounded-full bg-primary-400"></div>
-							<span class="text-neutral-300">{detectedItemCount} items detected</span>
+							<span class="text-neutral-300"
+								>{t('capture.itemsDetected', { count: detectedItemCount })}</span
+							>
 						</div>
 					</div>
 
@@ -529,7 +541,7 @@
 							disabled={isStartingAnalysis}
 						>
 							<RefreshCw size={16} strokeWidth={1.5} />
-							<span>Retry Failed Images</span>
+							<span>{t('capture.retryFailed')}</span>
 						</Button>
 						<Button
 							variant="primary"
@@ -539,7 +551,7 @@
 							}}
 							disabled={isStartingAnalysis}
 						>
-							<span>Continue with Successful</span>
+							<span>{t('capture.continueWithSuccessful')}</span>
 							<ChevronRight size={16} strokeWidth={1.5} />
 						</Button>
 						<Button
@@ -551,7 +563,7 @@
 							disabled={isStartingAnalysis}
 						>
 							<Trash2 size={16} strokeWidth={1.5} />
-							<span>Remove Failed</span>
+							<span>{t('capture.removeFailed')}</span>
 						</Button>
 					</div>
 				</div>
@@ -578,7 +590,7 @@
 							/>
 							<span
 								class="text-caption font-medium text-primary-400 transition-colors group-hover:text-primary-300"
-								>Camera</span
+								>{t('capture.camera')}</span
 							>
 						</div>
 					</button>
@@ -595,7 +607,7 @@
 							/>
 							<span
 								class="text-caption font-medium text-primary-400 transition-colors group-hover:text-primary-300"
-								>Upload</span
+								>{t('capture.upload')}</span
 							>
 						</div>
 					</button>
@@ -625,13 +637,17 @@
 						<!-- Title, Image count and total size -->
 						<div class="min-w-0 flex-1">
 							<p class="text-body-sm font-semibold text-neutral-100">
-								Item # {String(images.length - index).padStart(3, '0')}
+								{t('capture.itemNumber', {
+									number: String(images.length - index).padStart(3, '0'),
+								})}
 							</p>
 							<p class="text-caption text-neutral-400">
-								Image Count: {1 + (image.additionalFiles?.length || 0)}
+								{t('capture.imageCount')}
+								{1 + (image.additionalFiles?.length || 0)}
 							</p>
 							<p class="text-caption text-neutral-400">
-								Total Size: {formatFileSize(
+								{t('capture.totalSize')}
+								{formatFileSize(
 									image.file.size +
 										(image.additionalFiles?.reduce((sum, f) => sum + f.size, 0) || 0)
 								)}
@@ -647,7 +663,9 @@
 								<button
 									type="button"
 									class="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-									aria-label={expandedImages.has(index) ? 'Collapse options' : 'Expand options'}
+									aria-label={expandedImages.has(index)
+										? t('capture.collapseOptions')
+										: t('capture.expandOptions')}
 									onclick={() => toggleImageExpanded(index)}
 									disabled={isAnalyzing}
 								>
@@ -662,7 +680,7 @@
 								<button
 									type="button"
 									class="hover:text-error-400 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-error-500/10"
-									aria-label="Remove image"
+									aria-label={t('capture.removeImage')}
 									onclick={() => removeImage(index)}
 									disabled={isAnalyzing}
 								>
@@ -700,17 +718,17 @@
 										class="absolute left-1 top-1 h-4 w-4 rounded-full bg-neutral-400 transition-all peer-checked:translate-x-4 peer-checked:bg-white"
 									></div>
 								</div>
-								<span class="text-body-sm text-neutral-200">Separate into multiple items</span>
+								<span class="text-body-sm text-neutral-200">{t('capture.separateItems')}</span>
 							</label>
 
 							<!-- Asset ID section -->
 							{#if !image.separateItems}
 								<div>
 									<div class="mb-2 flex items-center gap-0.5">
-										<span class="text-body-sm font-medium text-neutral-200">Asset ID</span>
-										<InfoTooltip
-											text="Enter an asset ID manually or scan a pre-printed QR code. Leave blank for auto-assignment."
-										/>
+										<span class="text-body-sm font-medium text-neutral-200"
+											>{t('capture.assetId')}</span
+										>
+										<InfoTooltip text={t('capture.assetIdHelp')} />
 									</div>
 									<AssetIdInput
 										value={image.assetId ?? null}
@@ -724,14 +742,14 @@
 							<!-- Description section -->
 							<div>
 								<div class="mb-2 flex items-center gap-0.5">
-									<span class="text-body-sm font-medium text-neutral-200">Description</span>
-									<InfoTooltip
-										text="Describe the item(s) to help with identification. You can also paste images from your clipboard here."
-									/>
+									<span class="text-body-sm font-medium text-neutral-200"
+										>{t('capture.description')}</span
+									>
+									<InfoTooltip text={t('capture.descriptionHelp')} />
 								</div>
 								<input
 									type="text"
-									placeholder="Optional: describe what's in this photo..."
+									placeholder={t('capture.descriptionPlaceholder')}
 									value={image.extraInstructions}
 									oninput={(e) =>
 										updateImageOption(
@@ -767,10 +785,10 @@
 							<!-- Additional photos section -->
 							<div class="border-t border-neutral-800/50 pt-3">
 								<div class="mb-2 flex items-center gap-0.5">
-									<span class="text-body-sm font-medium text-neutral-200">Additional photos</span>
-									<InfoTooltip
-										text="Add close-ups, labels, serial numbers, different angles, invoices, receipts, etc."
-									/>
+									<span class="text-body-sm font-medium text-neutral-200"
+										>{t('capture.additionalPhotos')}</span
+									>
+									<InfoTooltip text={t('capture.additionalPhotosHelp')} />
 								</div>
 
 								<!-- Buttons first -->
@@ -782,7 +800,9 @@
 										disabled={isAnalyzing}
 									>
 										<Camera class="text-neutral-400" size={16} strokeWidth={1.5} />
-										<span class="text-caption font-medium text-neutral-400">Camera</span>
+										<span class="text-caption font-medium text-neutral-400"
+											>{t('capture.camera')}</span
+										>
 									</button>
 									<button
 										type="button"
@@ -791,7 +811,9 @@
 										disabled={isAnalyzing}
 									>
 										<Upload class="text-neutral-400" size={16} strokeWidth={1.5} />
-										<span class="text-caption font-medium text-neutral-400">Upload</span>
+										<span class="text-caption font-medium text-neutral-400"
+											>{t('capture.upload')}</span
+										>
 									</button>
 								</div>
 
@@ -820,7 +842,7 @@
 												<button
 													type="button"
 													class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 opacity-0 transition-all hover:bg-error-600 group-hover:opacity-100"
-													aria-label="Remove additional image"
+													aria-label={t('capture.removeItemAdditional')}
 													onclick={() => removeAdditionalImage(index, additionalIndex)}
 													disabled={isAnalyzing}
 												>
@@ -859,7 +881,7 @@
 						/>
 						<span
 							class="text-caption font-medium text-primary-400 transition-colors group-hover:text-primary-300"
-							>Camera</span
+							>{t('capture.camera')}</span
 						>
 					</div>
 				</button>
@@ -876,19 +898,23 @@
 						/>
 						<span
 							class="text-caption font-medium text-primary-400 transition-colors group-hover:text-primary-300"
-							>Upload</span
+							>{t('capture.upload')}</span
 						>
 					</div>
 				</button>
 			</div>
 
-			<h3 class="mb-2 text-center text-h3 text-neutral-100">Capture your items</h3>
+			<h3 class="mb-2 text-center text-h3 text-neutral-100">{t('capture.captureItems')}</h3>
 			<p class="mb-4 max-w-xs text-center text-body-sm text-neutral-400">
-				Take photos or upload images of items you want to add to your inventory
+				{t('capture.captureHint')}
 			</p>
 
 			<p class="text-caption text-neutral-500">
-				{totalImageCount} / {maxImages} images &middot; {maxFileSizeMb}MB per file
+				{t('capture.imageLimits', {
+					current: totalImageCount,
+					max: maxImages,
+					maxSize: maxFileSizeMb,
+				})}
 			</p>
 		</div>
 	{/if}
@@ -920,7 +946,7 @@
 		{#if showAnalyzingUI && isAnalyzing}
 			<Button variant="secondary" full onclick={cancelAnalysis}>
 				<X size={20} strokeWidth={1.5} />
-				<span>Cancel Analysis</span>
+				<span>{t('capture.cancelAnalysis')}</span>
 			</Button>
 		{:else if !showAnalyzingUI}
 			<Button
@@ -930,14 +956,14 @@
 				onclick={startAnalysis}
 			>
 				{#if isStartingAnalysis}
-					<span>Starting...</span>
+					<span>{t('capture.starting')}</span>
 				{:else}
-					<span>Analyze with AI</span>
+					<span>{t('capture.analyzeWithAi')}</span>
 				{/if}
 				<Lightbulb size={20} strokeWidth={1.5} />
 			</Button>
 			{#if images.length === 0}
-				<p class="mt-2 text-center text-caption text-neutral-500">Add photos to continue</p>
+				<p class="mt-2 text-center text-caption text-neutral-500">{t('capture.addPhotosHint')}</p>
 			{/if}
 		{/if}
 	</AppContainer>

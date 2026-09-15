@@ -15,15 +15,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .translations import get_text
+
 if TYPE_CHECKING:
     from ..core.persistent_settings import CustomFieldDefinition
 
 
-def build_custom_fields_schema(custom_fields: list[CustomFieldDefinition]) -> str:
+def build_custom_fields_schema(
+    custom_fields: list[CustomFieldDefinition],
+    output_language: str = "English",
+) -> str:
     """Build custom fields schema section for the AI prompt.
 
     Args:
         custom_fields: User-defined custom field definitions with AI instructions.
+        output_language: Target language for output.
 
     Returns:
         Custom fields schema string, or empty string if no custom fields.
@@ -31,7 +37,8 @@ def build_custom_fields_schema(custom_fields: list[CustomFieldDefinition]) -> st
     if not custom_fields:
         return ""
 
-    lines = ["\nCUSTOM FIELDS (always populate these for every item):"]
+    header = get_text("schema.custom_fields", output_language)
+    lines = [f"\n{header}"]
     for cf in custom_fields:
         # Use camelCase key to match default fields (modelNumber, serialNumber, etc.)
         lines.append(f"- {cf.prompt_key}: string or null ({cf.ai_instruction})")
@@ -39,7 +46,10 @@ def build_custom_fields_schema(custom_fields: list[CustomFieldDefinition]) -> st
     return "\n".join(lines)
 
 
-def build_critical_constraints(single_item: bool = False) -> str:
+def build_critical_constraints(
+    single_item: bool = False,
+    output_language: str = "English",
+) -> str:
     """Build critical constraints that MUST appear early in prompt.
 
     These are the most important rules that should be front-loaded
@@ -47,32 +57,27 @@ def build_critical_constraints(single_item: bool = False) -> str:
 
     Args:
         single_item: If True, enforce single-item grouping mode.
+        output_language: Target language for output.
 
     Returns:
         Critical constraints string.
     """
     if single_item:
-        return (
-            "CRITICAL: Treat EVERYTHING in this image as ONE item type. "
-            "Do NOT separate into multiple entries. Count how many are visible.\n"
-            "Do NOT guess or infer - only use what's visible or user-stated."
-        )
-    return (
-        "RULES:\n"
-        "- Combine identical objects into one entry with correct quantity\n"
-        "- Separate distinctly different items into separate entries\n"
-        "- Do NOT guess or infer - only use what's visible or user-stated\n"
-        "- Ignore background elements (floors, walls, shelves, packaging)"
-    )
+        return get_text("constraints.single_item", output_language)
+    return get_text("constraints.normal_rules", output_language)
 
 
-def build_naming_examples(customizations: dict[str, str]) -> str:
+def build_naming_examples(
+    customizations: dict[str, str],
+    output_language: str = "English",
+) -> str:
     """Build naming examples with optional user override.
 
     Args:
         customizations: Dict with effective values for all fields (required).
             Must contain 'naming_examples' for examples. If 'name' contains
             a custom instruction, adds a user preference note.
+        output_language: Target language for output.
 
     Returns:
         Naming examples string with optional user preference.
@@ -80,92 +85,116 @@ def build_naming_examples(customizations: dict[str, str]) -> str:
     # Get examples from customizations
     examples = customizations.get("naming_examples", "").strip()
     if not examples:
-        examples = (
-            '"Ball Bearing 6900-2RS 10x22x6mm", '
-            '"Acrylic Paint Vallejo Game Color Bone White", '
-            '"LED Strip COB Green 5V 1M"'
-        )
+        examples = get_text("naming.default_examples", output_language)
 
     # Build base with examples
-    result = f"""Examples: {examples}"""
+    header = get_text("naming.header", output_language)
+    result = f"{header} {examples}"
 
     # Add user naming preference if it's a custom instruction
     name_instruction = customizations.get("name", "").strip()
     if name_instruction and not name_instruction.startswith("[Type]"):
         # This is a custom instruction, not the default format
-        result += f"""
-
-USER NAMING PREFERENCE (takes priority):
-{name_instruction}"""
+        preference_label = get_text("naming.user_preference", output_language)
+        result += f"\n\n{preference_label}\n{name_instruction}"
 
     return result
 
 
-def build_item_schema(customizations: dict[str, str]) -> str:
+def build_item_schema(
+    customizations: dict[str, str],
+    output_language: str = "English",
+) -> str:
     """Build item schema with field instructions integrated inline.
 
     Args:
         customizations: Dict with effective values for fields (name, quantity,
             description). Required - must contain values for all fields.
+        output_language: Target language for output.
 
     Returns:
         Item schema string with field instructions.
     """
-    name_instr = customizations.get("name", "Title Case, max 255 characters")
-    qty_instr = customizations.get("quantity", ">= 1, count of identical items")
-    desc_instr = customizations.get("description", "max 1000 chars, condition/attributes only")
-    return f"""OUTPUT SCHEMA - Each item must include:
-- name: string ({name_instr})
-- quantity: integer ({qty_instr})
-- description: string ({desc_instr})
-- tagIds: array of matching tag IDs"""
+    name_instr = customizations.get("name", get_text("default.name", output_language))
+    qty_instr = customizations.get("quantity", get_text("default.quantity", output_language))
+    desc_instr = customizations.get("description", get_text("default.description", output_language))
+
+    header = get_text("schema.output_schema", output_language)
+    name_label = get_text("field.name", output_language)
+    qty_label = get_text("field.quantity", output_language)
+    desc_label = get_text("field.description", output_language)
+    tag_label = get_text("field.tagIds", output_language)
+
+    return f"""{header}
+- {name_label} ({name_instr})
+- {qty_label} ({qty_instr})
+- {desc_label} ({desc_instr})
+- {tag_label}"""
 
 
-def build_extended_fields_schema(customizations: dict[str, str]) -> str:
+def build_extended_fields_schema(
+    customizations: dict[str, str],
+    output_language: str = "English",
+) -> str:
     """Build extended fields schema with field instructions integrated inline.
 
     Args:
         customizations: Dict with effective values for extended fields
             (manufacturer, model_number, serial_number, purchase_price,
             purchase_from, notes). Required - must contain values for all fields.
+        output_language: Target language for output.
 
     Returns:
         Extended fields schema string with field instructions.
     """
-    mfr_instr = customizations.get("manufacturer", "brand name when visible")
-    model_instr = customizations.get("model_number", "product code when visible")
-    serial_instr = customizations.get("serial_number", "S/N when visible")
-    price_instr = customizations.get("purchase_price", "price from tag, just the number")
-    from_instr = customizations.get("purchase_from", "store name when visible")
-    notes_instr = customizations.get("notes", "ONLY for defects/damage")
+    mfr_instr = customizations.get("manufacturer", get_text("default.manufacturer", output_language))
+    model_instr = customizations.get("model_number", get_text("default.model_number", output_language))
+    serial_instr = customizations.get("serial_number", get_text("default.serial_number", output_language))
+    price_instr = customizations.get("purchase_price", get_text("default.purchase_price", output_language))
+    from_instr = customizations.get("purchase_from", get_text("default.purchase_from", output_language))
+    notes_instr = customizations.get("notes", get_text("default.notes", output_language))
+
+    header = get_text("schema.optional_fields", output_language)
+    mfr_label = get_text("field.manufacturer", output_language)
+    model_label = get_text("field.modelNumber", output_language)
+    serial_label = get_text("field.serialNumber", output_language)
+    price_label = get_text("field.purchasePrice", output_language)
+    from_label = get_text("field.purchaseFrom", output_language)
+    notes_label = get_text("field.notes", output_language)
+
     return f"""
-OPTIONAL FIELDS (include only when visible or user-provided):
-- manufacturer: string or null ({mfr_instr})
-- modelNumber: string or null ({model_instr})
-- serialNumber: string or null ({serial_instr})
-- purchasePrice: number or null ({price_instr})
-- purchaseFrom: string or null ({from_instr})
-- notes: string or null ({notes_instr})"""
+{header}
+- {mfr_label} ({mfr_instr})
+- {model_label} ({model_instr})
+- {serial_label} ({serial_instr})
+- {price_label} ({price_instr})
+- {from_label} ({from_instr})
+- {notes_label} ({notes_instr})"""
 
 
-def build_tag_prompt(tags: list[dict[str, str]] | None) -> str:
+def build_tag_prompt(
+    tags: list[dict[str, str]] | None,
+    output_language: str = "English",
+) -> str:
     """Build the tag assignment prompt section.
 
     Args:
         tags: List of tag dicts with 'id' and 'name' keys, or None.
+        output_language: Target language for output.
 
     Returns:
         Prompt text instructing the AI how to handle tags.
     """
     if not tags:
-        return "No tags available; omit tagIds."
+        return get_text("tags.none", output_language)
 
     tag_lines = [f"- {tag['name']} (id: {tag['id']})" for tag in tags if tag.get("id") and tag.get("name")]
 
     if not tag_lines:
-        return "No tags available; omit tagIds."
+        return get_text("tags.none", output_language)
 
-    return "TAGS - Assign matching IDs to each item:\n" + "\n".join(tag_lines)
+    header = get_text("tags.available", output_language)
+    return header + "\n" + "\n".join(tag_lines)
 
 
 def build_language_instruction(output_language: str | None) -> str:
@@ -181,8 +210,10 @@ def build_language_instruction(output_language: str | None) -> str:
     if not output_language or output_language.strip().lower() == "english":
         return ""
 
-    return (
-        f"\nOUTPUT LANGUAGE: Write all item names, descriptions, and notes "
-        f"in {output_language.strip()}. Keep field names (name, description, etc.) "
-        f"in English for JSON compatibility.\n"
-    )
+    lang = output_language.strip()
+    instruction = get_text("language.instruction", lang)
+    example = get_text("language.example", lang)
+
+    if example:
+        return f"\n{instruction}\n{example}\n"
+    return f"\n{instruction}\n"

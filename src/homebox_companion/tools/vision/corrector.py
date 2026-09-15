@@ -16,6 +16,7 @@ from ...ai.prompts import (
     build_tag_prompt,
 )
 from ...ai.response_models import get_items_response_model
+from ...ai.translations import get_text
 from .models import DetectedItem, get_items_adapter
 
 if TYPE_CHECKING:
@@ -50,6 +51,7 @@ async def correct_item(
     Returns:
         List of corrected DetectedItem instances (validated through Pydantic).
     """
+    lang = output_language or "English"
 
     logger.info(f"Correcting item '{current_item.get('name')}' with user instructions")
     logger.debug(f"User correction: {correction_instructions}")
@@ -62,24 +64,32 @@ async def correct_item(
 
     # Build schemas with customizations
     language_instr = build_language_instruction(output_language)
-    item_schema = build_item_schema(field_preferences)
-    extended_schema = build_extended_fields_schema(field_preferences)
-    custom_fields_schema = build_custom_fields_schema(custom_fields or [])
-    naming_examples = build_naming_examples(field_preferences)
-    tag_prompt = build_tag_prompt(tags)
+    item_schema = build_item_schema(field_preferences, lang)
+    extended_schema = build_extended_fields_schema(field_preferences, lang)
+    custom_fields_schema = build_custom_fields_schema(custom_fields or [], lang)
+    naming_examples = build_naming_examples(field_preferences, lang)
+    tag_prompt = build_tag_prompt(tags, lang)
+
+    role = get_text("role.inventory_assistant_correcting", lang)
+    output_instr = get_text("output.return_json_items", lang)
+    correction_header = get_text("correction.header", lang)
+    correction_separate = get_text("correction.separate", lang)
+    correction_fix = get_text("correction.fix_name", lang)
+    correction_extract = get_text("correction.extract_fields", lang)
+    correction_verify = get_text("correction.verify", lang)
+    correction_apply = get_text("correction.apply", lang)
 
     system_prompt = (
         # 1. Role
-        "You are an inventory assistant correcting item detection errors. "
-        "Return a JSON object with an `items` array.\n"
+        f"{role} {output_instr}\n"
         # 2. Language instruction (if not English)
         f"{language_instr}\n"
         # 3. Critical correction rules
-        "CORRECTION RULES:\n"
-        "- 'separate items' → return multiple items in array\n"
-        "- Name/description fix → return single corrected item\n"
-        "- Extract price→purchasePrice, store→purchaseFrom, brand→manufacturer\n"
-        "- Always verify against the image\n\n"
+        f"{correction_header}\n"
+        f"{correction_separate}\n"
+        f"{correction_fix}\n"
+        f"{correction_extract}\n"
+        f"{correction_verify}\n\n"
         # 4. Schema
         f"{item_schema}\n"
         f"{extended_schema}\n"
@@ -92,14 +102,20 @@ async def correct_item(
     )
 
     # Build current item summary
-    current_summary = f"Current: {current_item.get('name', 'Unknown')} (qty: {current_item.get('quantity', 1)})"
+    current_item_label = get_text("correction.current_item", lang)
+    unknown_label = get_text("default.unknown", lang)
+    current_summary = current_item_label.format(
+        name=current_item.get("name", unknown_label),
+        quantity=current_item.get("quantity", 1),
+    )
     if current_item.get("manufacturer"):
         current_summary += f", mfr: {current_item.get('manufacturer')}"
 
+    user_input_label = get_text("correction.user_input", lang)
     user_prompt = (
         f"{current_summary}\n\n"
-        f'User correction: "{correction_instructions}"\n\n'
-        "Apply the correction and return JSON with corrected item(s)."
+        f"{user_input_label.format(instructions=correction_instructions)}\n\n"
+        f"{correction_apply}"
     )
 
     response_model = get_items_response_model(custom_fields)

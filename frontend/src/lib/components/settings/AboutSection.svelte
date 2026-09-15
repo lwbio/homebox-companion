@@ -14,6 +14,7 @@
 		ChevronDown,
 		ExternalLink,
 	} from 'lucide-svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	const service = settingsService;
 </script>
@@ -21,14 +22,14 @@
 <section class="card space-y-4">
 	<h2 class="flex items-center gap-2 text-body-lg font-semibold text-neutral-100">
 		<Info class="text-primary-400" size={20} strokeWidth={1.5} />
-		About
+		{t('settings.about')}
 	</h2>
 
 	<!-- Version - Always visible -->
 	<div class="flex items-center justify-between">
-		<span class="text-neutral-400">Version</span>
+		<span class="text-neutral-400">{t('settings.version')}</span>
 		<div class="flex items-center gap-2">
-			<span class="font-mono text-neutral-100">{uiStore.appVersion || 'Loading...'}</span>
+			<span class="font-mono text-neutral-100">{uiStore.appVersion || t('settings.loading')}</span>
 			{#if service.updateAvailable && service.latestVersion}
 				<a
 					href="https://github.com/Duelion/homebox-companion/releases/latest"
@@ -45,7 +46,7 @@
 					class="inline-flex items-center gap-1 rounded-full bg-success-500/20 px-2 py-0.5 text-xs text-success-500"
 				>
 					<Check size={12} strokeWidth={2} />
-					<span>Up to date</span>
+					<span>{t('settings.upToDate')}</span>
 				</span>
 			{/if}
 			<button
@@ -53,7 +54,7 @@
 				class="inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
 				onclick={() => service.checkForUpdates()}
 				disabled={service.isLoading.updateCheck}
-				title="Check for updates"
+				title={t('settings.checkForUpdates')}
 			>
 				{#if service.isLoading.updateCheck}
 					<div
@@ -62,7 +63,7 @@
 				{:else}
 					<RefreshCw size={12} strokeWidth={2} />
 				{/if}
-				<span>Check</span>
+				<span>{t('settings.check')}</span>
 			</button>
 		</div>
 	</div>
@@ -80,13 +81,13 @@
 		>
 			<span class="flex items-center gap-2">
 				<Github size={20} />
-				<span>View on GitHub</span>
+				<span>{t('settings.viewOnGithub')}</span>
 			</span>
 			<ExternalLink class="opacity-50 transition-opacity group-hover:opacity-100" size={16} />
 		</a>
 		<p class="flex items-start gap-1.5 text-xs text-neutral-500">
 			<Star class="mt-0.5 flex-shrink-0 text-warning-500" size={14} fill="currentColor" />
-			<span>Enjoying the app? Consider giving us a star on GitHub!</span>
+			<span>{t('settings.starCta')}</span>
 		</p>
 	</div>
 
@@ -97,7 +98,7 @@
 		onclick={() => (service.showAboutDetails = !service.showAboutDetails)}
 	>
 		<Info class="text-primary-400" size={20} strokeWidth={1.5} />
-		<span>Show Details</span>
+		<span>{t('settings.showDetails')}</span>
 		<ChevronDown
 			class="ml-auto transition-transform {service.showAboutDetails ? 'rotate-180' : ''}"
 			size={16}
@@ -110,7 +111,7 @@
 			{#if service.config}
 				<!-- Homebox URL -->
 				<div class="flex items-center justify-between border-t border-neutral-800 py-2">
-					<span class="flex-shrink-0 text-neutral-400">Homebox URL</span>
+					<span class="flex-shrink-0 text-neutral-400">{t('settings.homeboxUrl')}</span>
 					<div class="flex min-w-0 items-center gap-2">
 						<!-- eslint-disable svelte/no-navigation-without-resolve -- External URL, not an app route -->
 						<a
@@ -128,7 +129,7 @@
 							<span
 								class="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-warning-500/20 px-2 py-0.5 text-xs text-warning-500"
 							>
-								Demo
+								{t('settings.demo')}
 							</span>
 						{/if}
 					</div>
@@ -136,13 +137,13 @@
 
 				<!-- AI Model -->
 				<div class="flex items-center justify-between border-t border-neutral-800 py-2">
-					<span class="text-neutral-400">AI Model</span>
+					<span class="text-neutral-400">{t('settings.aiModel')}</span>
 					<span class="font-mono text-sm text-neutral-100">{service.config.llm_model}</span>
 				</div>
 
 				<!-- Image Quality -->
 				<div class="flex items-center justify-between border-t border-neutral-800 py-2">
-					<span class="text-neutral-400">Image Quality</span>
+					<span class="text-neutral-400">{t('settings.imageQuality')}</span>
 					<span class="font-mono text-sm capitalize text-neutral-100"
 						>{service.config.image_quality}</span
 					>

@@ -3,6 +3,7 @@
 	import { ChevronDown, RefreshCcw } from 'lucide-svelte';
 	import Button from './Button.svelte';
 	import AnalysisProgressBar from './AnalysisProgressBar.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	interface Props {
 		expanded: boolean;
@@ -30,20 +31,20 @@
 		onclick={onToggle}
 	>
 		<ChevronDown class="transition-transform {expanded ? 'rotate-180' : ''}" size={16} />
-		<span>AI Correction</span>
+		<span>{t('aiCorrection.title')}</span>
 	</button>
 
 	{#if expanded}
 		<div class="mt-3 space-y-3" transition:slide={{ duration: 200 }}>
 			{#if loading}
-				<AnalysisProgressBar current={0} total={1} message="Correcting with AI..." />
+				<AnalysisProgressBar current={0} total={1} message={t('aiCorrection.correcting')} />
 			{:else}
 				<p class="text-xs text-neutral-500">
-					Tell the AI what's wrong and it will re-analyze the image
+					{t('aiCorrection.description')}
 				</p>
 				<textarea
 					bind:value={correctionPrompt}
-					placeholder="e.g., 'The brand is Sony, not Samsung' or 'This is a multimeter, not a voltmeter'"
+					placeholder={t('aiCorrection.placeholder')}
 					rows="2"
 					class="input resize-none"
 				></textarea>
@@ -55,7 +56,7 @@
 					disabled={loading || !correctionPrompt.trim()}
 				>
 					<RefreshCcw size={16} strokeWidth={2} />
-					<span>Correct with AI</span>
+					<span>{t('aiCorrection.button')}</span>
 				</Button>
 			{/if}
 		</div>

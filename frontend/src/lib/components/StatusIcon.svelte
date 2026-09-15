@@ -6,6 +6,7 @@
 	 * Used for both AI analysis progress and submission progress.
 	 */
 	import { Check, TriangleAlert, X } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 
 	type Status =
 		| 'pending'
@@ -52,7 +53,7 @@
 {:else if isWarning}
 	<div
 		class="{containerSize} flex items-center justify-center rounded-full bg-warning-500/20"
-		title="Completed with warnings"
+		title={t('common.completedWithWarnings')}
 	>
 		<TriangleAlert class="text-warning-500" size={iconSize} strokeWidth={2.5} />
 	</div>

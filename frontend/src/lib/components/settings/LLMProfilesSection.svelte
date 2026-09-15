@@ -9,6 +9,7 @@
 	import { llmProfiles, type LLMProfile, type ProfileStatus } from '$lib/api/settings';
 	import Button from '$lib/components/Button.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	// State
 	let profiles = $state<LLMProfile[]>([]);
@@ -46,7 +47,7 @@
 			const result = await llmProfiles.list();
 			profiles = result.profiles;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load profiles';
+			error = e instanceof Error ? e.message : t('llmProfiles.error.loadFailed');
 		} finally {
 			loading = false;
 		}
@@ -103,20 +104,20 @@
 			await loadProfiles();
 			closeModal();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to save profile';
+			error = e instanceof Error ? e.message : t('llmProfiles.error.saveFailed');
 		} finally {
 			saving = false;
 		}
 	}
 
 	async function handleDelete(name: string) {
-		if (!confirm(`Delete profile "${name}"?`)) return;
+		if (!confirm(t('llmProfiles.error.deleteConfirm', { name }))) return;
 		error = null;
 		try {
 			await llmProfiles.delete(name);
 			await loadProfiles();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete profile';
+			error = e instanceof Error ? e.message : t('llmProfiles.error.deleteFailed');
 		}
 	}
 
@@ -126,7 +127,7 @@
 			await llmProfiles.activate(name);
 			await loadProfiles();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to activate profile';
+			error = e instanceof Error ? e.message : t('llmProfiles.error.activateFailed');
 		}
 	}
 
@@ -143,7 +144,10 @@
 				testTimeoutId = null;
 			}, 5000);
 		} catch (e) {
-			testResult = { success: false, message: e instanceof Error ? e.message : 'Test failed' };
+			testResult = {
+				success: false,
+				message: e instanceof Error ? e.message : t('llmProfiles.error.testFailed'),
+			};
 		} finally {
 			testingProfile = null;
 		}
@@ -165,11 +169,11 @@
 	<div class="flex items-center justify-between">
 		<h2 class="flex items-center gap-2 text-body-lg font-semibold text-neutral-100">
 			<FlaskConical class="text-primary-400" size={20} strokeWidth={1.5} />
-			AI Models
+			{t('llmProfiles.title')}
 		</h2>
 		<Button variant="ghost" size="sm" onclick={openCreateModal}>
 			<Plus size={16} strokeWidth={2} />
-			Add
+			{t('llmProfiles.add')}
 		</Button>
 	</div>
 
@@ -197,8 +201,8 @@
 		</div>
 	{:else if profiles.length === 0}
 		<div class="rounded-xl border border-neutral-700/50 bg-neutral-800/30 p-6 text-center">
-			<p class="text-neutral-400">No AI models configured</p>
-			<p class="mt-1 text-sm text-neutral-500">Add a model to enable AI features</p>
+			<p class="text-neutral-400">{t('llmProfiles.noProfiles')}</p>
+			<p class="mt-1 text-sm text-neutral-500">{t('llmProfiles.addHint')}</p>
 		</div>
 	{:else}
 		<div class="space-y-2">
@@ -227,8 +231,8 @@
 							<button
 								type="button"
 								class="btn-icon-touch hover:text-success-400"
-								title="Set as active profile"
-								aria-label="Set as active profile"
+								title={t('llmProfiles.setActive')}
+								aria-label={t('llmProfiles.setActive')}
 								onclick={() => handleActivate(profile.name)}
 							>
 								<Check size={16} strokeWidth={2} />
@@ -237,8 +241,8 @@
 						<button
 							type="button"
 							class="btn-icon-touch hover:text-primary-400"
-							title="Test connection"
-							aria-label="Test connection"
+							title={t('llmProfiles.testConnection')}
+							aria-label={t('llmProfiles.testConnection')}
 							disabled={testingProfile === profile.name}
 							onclick={() => handleTest(profile.name)}
 						>
@@ -253,8 +257,8 @@
 						<button
 							type="button"
 							class="btn-icon-touch hover:text-neutral-100"
-							title="Edit"
-							aria-label="Edit profile"
+							title={t('llmProfiles.edit')}
+							aria-label={t('llmProfiles.edit')}
 							onclick={() => openEditModal(profile)}
 						>
 							<Pencil size={16} strokeWidth={2} />
@@ -262,8 +266,8 @@
 						<button
 							type="button"
 							class="btn-icon-touch hover:text-error-400"
-							title="Delete"
-							aria-label="Delete profile"
+							title={t('llmProfiles.delete')}
+							aria-label={t('llmProfiles.delete')}
 							onclick={() => handleDelete(profile.name)}
 						>
 							<Trash2 size={16} strokeWidth={2} />
@@ -278,7 +282,7 @@
 <!-- Modal -->
 <Modal
 	bind:open={showModal}
-	title={editingProfile ? 'Edit Profile' : 'New Profile'}
+	title={editingProfile ? t('llmProfiles.editProfile') : t('llmProfiles.newProfile')}
 	onclose={closeModal}
 >
 	<form
@@ -290,38 +294,38 @@
 	>
 		<div>
 			<label for="profile-name" class="mb-1 block text-sm font-medium text-neutral-300">
-				Name
+				{t('llmProfiles.name')}
 			</label>
 			<input
 				id="profile-name"
 				type="text"
 				bind:value={formName}
 				required
-				placeholder="e.g., openai-prod"
+				placeholder={t('llmProfiles.namePlaceholder')}
 				class="input-sm"
 			/>
 		</div>
 
 		<div>
 			<label for="profile-model" class="mb-1 block text-sm font-medium text-neutral-300">
-				Model
+				{t('llmProfiles.model')}
 			</label>
 			<input
 				id="profile-model"
 				type="text"
 				bind:value={formModel}
 				required
-				placeholder="e.g., gpt-4o, ollama/mistral"
+				placeholder={t('llmProfiles.modelPlaceholder')}
 				class="input-sm"
 			/>
 			<p class="mt-1 text-xs text-neutral-500">
-				LiteLLM model format: gpt-4o, claude-3-opus, ollama/mistral
+				{t('llmProfiles.modelHelp')}
 			</p>
 		</div>
 
 		<div>
 			<label for="profile-api-key" class="mb-1 block text-sm font-medium text-neutral-300">
-				API Key
+				{t('llmProfiles.apiKey')}
 			</label>
 			<input
 				id="profile-api-key"
@@ -331,47 +335,47 @@
 				class="input-sm"
 			/>
 			{#if editingProfile}
-				<p class="mt-1 text-xs text-neutral-500">Leave blank to keep existing key</p>
+				<p class="mt-1 text-xs text-neutral-500">{t('llmProfiles.apiKeyHelp')}</p>
 			{/if}
 		</div>
 
 		<div>
 			<label for="profile-api-base" class="mb-1 block text-sm font-medium text-neutral-300">
-				API Base URL <span class="text-neutral-500">(optional)</span>
+				{t('llmProfiles.apiBaseUrl')}
 			</label>
 			<input
 				id="profile-api-base"
 				type="text"
 				bind:value={formApiBase}
-				placeholder="e.g., http://localhost:11434"
+				placeholder={t('llmProfiles.apiBaseUrlPlaceholder')}
 				class="input-sm"
 			/>
 		</div>
 
 		<div>
 			<label for="profile-status" class="mb-1 block text-sm font-medium text-neutral-300">
-				Status
+				{t('llmProfiles.status')}
 			</label>
 			<select id="profile-status" bind:value={formStatus} class="input-sm">
-				<option value="primary">Primary</option>
-				<option value="fallback">Fallback</option>
-				<option value="off">Off</option>
+				<option value="primary">{t('llmProfiles.statusPrimary')}</option>
+				<option value="fallback">{t('llmProfiles.statusFallback')}</option>
+				<option value="off">{t('llmProfiles.statusOff')}</option>
 			</select>
 			<p class="mt-1 text-xs text-neutral-500">
 				{#if formStatus === 'primary'}
-					Primary model used for all AI features
+					{t('llmProfiles.statusPrimaryHelp')}
 				{:else if formStatus === 'fallback'}
-					Used automatically if the primary model fails
+					{t('llmProfiles.statusFallbackHelp')}
 				{:else}
-					Profile saved but not in use
+					{t('llmProfiles.statusOffHelp')}
 				{/if}
 			</p>
 		</div>
 
 		<div class="flex gap-3 pt-2">
-			<Button variant="ghost" full onclick={closeModal} type="button">Cancel</Button>
+			<Button variant="ghost" full onclick={closeModal} type="button">{t('approval.close')}</Button>
 			<Button variant="primary" full type="submit" disabled={saving}>
-				{saving ? 'Saving...' : 'Save'}
+				{saving ? t('fieldPrefs.saving') : t('fieldPrefs.save')}
 			</Button>
 		</div>
 	</form>

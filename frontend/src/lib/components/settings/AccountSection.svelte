@@ -12,6 +12,7 @@
 	import { auth } from '$lib/api/auth';
 	import { authLogger as log } from '$lib/utils/logger';
 	import Button from '$lib/components/Button.svelte';
+	import { t } from '$lib/i18n/reactive.svelte';
 
 	async function handleLogout() {
 		// Invalidate token on the Homebox server (best-effort)
@@ -32,7 +33,7 @@
 <section class="card space-y-4">
 	<h2 class="flex items-center gap-2 text-body-lg font-semibold text-neutral-100">
 		<User class="text-primary-400" size={20} strokeWidth={1.5} />
-		Account
+		{t('settings.account')}
 	</h2>
 
 	<!-- Signed in as -->
@@ -46,7 +47,7 @@
 				<User size={20} strokeWidth={1.5} />
 			</div>
 			<div class="min-w-0 flex-1">
-				<p class="text-xs text-neutral-500">Signed in as</p>
+				<p class="text-xs text-neutral-500">{t('settings.signedInAs')}</p>
 				<p class="truncate font-medium text-neutral-100">{authStore.email}</p>
 			</div>
 		</div>
@@ -55,13 +56,13 @@
 	{#if authStore.isLegacy}
 		<Button variant="danger" full onclick={handleLogout}>
 			<LogOut size={20} strokeWidth={1.5} />
-			<span>Sign Out</span>
+			<span>{t('settings.signOut')}</span>
 		</Button>
 	{:else}
 		<div
 			class="rounded-xl border border-success-500/30 bg-success-500/10 p-4 text-body-sm text-success-500"
 		>
-			Connected using a Homebox API key
+			{t('settings.apiKeyConnected')}
 		</div>
 	{/if}
 </section>
