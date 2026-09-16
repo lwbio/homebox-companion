@@ -49,8 +49,8 @@ class LocationView(BaseModel):
     @computed_field
     @property
     def url(self) -> str:
-        """Generate URL for this location."""
-        return f"{settings.effective_link_base_url}/location/{self.id}"
+        """Generate URL for this location (items list filtered by location)."""
+        return f"{settings.effective_companion_base_url}/items?location_id={self.id}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> LocationView:
@@ -84,12 +84,17 @@ class LocationView(BaseModel):
 class CompactTagView(BaseModel):
     """Minimal tag view for compact item responses.
 
-    Only includes id and name to reduce token usage while still
-    allowing the LLM to work with tags without fetching full item details.
+    Includes id, name, and a URL to the companion app items list filtered by this tag.
     """
 
     id: str
     name: str
+
+    @computed_field
+    @property
+    def url(self) -> str:
+        """Generate URL for items filtered by this tag."""
+        return f"{settings.effective_companion_base_url}/items?tag={self.id}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CompactTagView:
@@ -122,7 +127,7 @@ class CompactItemView(BaseModel):
     @property
     def url(self) -> str:
         """Generate URL for this item."""
-        return f"{settings.effective_link_base_url}/item/{self.id}"
+        return f"{settings.effective_companion_base_url}/items/{self.id}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CompactItemView:
@@ -187,7 +192,7 @@ class ParentItemView(BaseModel):
     @property
     def url(self) -> str:
         """Generate URL for this parent item."""
-        return f"{settings.effective_link_base_url}/item/{self.id}"
+        return f"{settings.effective_companion_base_url}/items/{self.id}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ParentItemView:
@@ -226,7 +231,7 @@ class ItemView(BaseModel):
     @property
     def url(self) -> str:
         """Generate URL for this item."""
-        return f"{settings.effective_link_base_url}/item/{self.id}"
+        return f"{settings.effective_companion_base_url}/items/{self.id}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ItemView:
@@ -290,16 +295,14 @@ def add_tree_urls(node: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Same node with 'url' field added.
     """
-    base_url = settings.effective_link_base_url
-
     # Determine type from entityType or fall back to legacy 'type' field
     entity_type = node.get("entityType", {})
     is_location = entity_type.get("isLocation", False) if entity_type else node.get("type") == "location"
 
     if is_location:
-        node["url"] = f"{base_url}/location/{node.get('id')}"
+        node["url"] = f"{settings.effective_companion_base_url}/items?location_id={node.get('id')}"
     else:  # item
-        node["url"] = f"{base_url}/item/{node.get('id')}"
+        node["url"] = f"{settings.effective_companion_base_url}/items/{node.get('id')}"
 
     # Recursively process children
     for child in node.get("children", []):

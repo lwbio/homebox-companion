@@ -2,6 +2,7 @@
 export default {
 	// ── 通用 ──────────────────────────────────────────────────────────
 	'common.loading': '加载中...',
+	'common.items': '物品',
 	'common.cancel': '取消',
 	'common.save': '保存',
 	'common.confirm': '确认',
@@ -334,6 +335,17 @@ export default {
 	'itemPicker.quantity': '数量：{count}',
 	'itemPicker.clearSelection': '清除选择',
 	'itemPicker.error.loadFailed': '加载物品失败',
+
+	// ── 物品详情 ──────────────────────────────────────────────────────
+	'itemDetail.title': '物品详情',
+	'itemDetail.assetId': '资产编号',
+	'itemDetail.manufacturer': '制造商',
+	'itemDetail.modelNumber': '型号',
+	'itemDetail.serialNumber': '序列号',
+	'itemDetail.purchasePrice': '购买价格',
+	'itemDetail.purchaseFrom': '购买来源',
+	'itemDetail.notes': '备注',
+	'itemDetail.insured': '已投保',
 
 	// ── AI 纠正面板 ──────────────────────────────────────────────────
 	'aiCorrection.title': 'AI 纠正',

@@ -4,7 +4,14 @@
 
 import { request, requestFormData, requestBlobUrl, type BlobUrlResult } from './client';
 import { apiLogger as log } from '../utils/logger';
-import type { BatchCreateRequest, BatchCreateResponse, ItemSummary } from '../types';
+import type {
+	BatchCreateRequest,
+	BatchCreateResponse,
+	ItemSummary,
+	ItemDetail,
+	ItemListItem,
+	ItemListResponse,
+} from '../types';
 
 export type { BlobUrlResult };
 
@@ -24,8 +31,24 @@ export interface ItemUpdateData {
 }
 
 export const items = {
-	list: (locationId?: string, signal?: AbortSignal) =>
-		request<ItemSummary[]>(`/items${locationId ? `?location_id=${locationId}` : ''}`, { signal }),
+	list: (
+		locationId?: string,
+		tagId?: string,
+		page?: number,
+		pageSize?: number,
+		signal?: AbortSignal
+	) => {
+		const params = new URLSearchParams();
+		if (locationId) params.set('location_id', locationId);
+		if (tagId) params.set('tag', tagId);
+		if (page !== undefined) params.set('page', String(page));
+		if (pageSize !== undefined) params.set('page_size', String(pageSize));
+		const qs = params.toString();
+		return request<ItemListResponse>(`/items${qs ? `?${qs}` : ''}`, { signal });
+	},
+
+	get: (itemId: string, signal?: AbortSignal) =>
+		request<ItemDetail>(`/items/${itemId}`, { signal }),
 
 	create: (data: BatchCreateRequest, options: CreateOptions = {}) =>
 		request<BatchCreateResponse>('/items', {

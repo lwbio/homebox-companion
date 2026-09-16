@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { Package, ExternalLink, ScanLine, Printer, Check, LoaderCircle } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { Package, ScanLine, Printer, Check, LoaderCircle } from 'lucide-svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
 	import Modal from './Modal.svelte';
@@ -28,9 +30,6 @@
 	/** Track IDs of items whose thumbnails failed to load */
 	let failedThumbnails = new SvelteSet<string>();
 
-	/** Homebox base URL for constructing item links */
-	let homeboxUrl = $state<string | null>(null);
-
 	/** Whether server-side label printing is enabled (HBC_PRINT_ENABLED) */
 	let printEnabled = $state(false);
 
@@ -39,16 +38,14 @@
 
 	onMount(async () => {
 		// Use cached config if available, otherwise fetch
-		if (settingsService.config?.homebox_url) {
-			homeboxUrl = settingsService.config.homebox_url;
+		if (settingsService.config?.print_enabled !== undefined) {
 			printEnabled = settingsService.config.print_enabled;
 		} else {
 			try {
 				const config = await getConfig();
-				homeboxUrl = config.homebox_url;
 				printEnabled = config.print_enabled;
 			} catch {
-				// Non-critical: links just won't work
+				// Non-critical: print button just won't show
 			}
 		}
 		// Ensure tags are loaded for label resolution
@@ -62,6 +59,12 @@
 		printStatus = initial;
 	});
 
+	/** Navigate to item detail page and close modal */
+	function viewItem(itemId: string) {
+		onclose();
+		goto(resolve('/items/[id]', { id: itemId }));
+	}
+
 	/** Handle image load error by marking it as failed so fallback icon is shown */
 	function handleImageError(itemId: string) {
 		failedThumbnails.add(itemId);
@@ -70,14 +73,6 @@
 	/** Check if an item should show its thumbnail */
 	function shouldShowThumbnail(item: CreatedItem): boolean {
 		return !!item.thumbnail && !failedThumbnails.has(item.id);
-	}
-
-	/** Get the Homebox URL for an item */
-	function getItemUrl(itemId: string): string | null {
-		if (!homeboxUrl) return null;
-		// Remove trailing slash if present
-		const base = homeboxUrl.replace(/\/$/, '');
-		return `${base}/item/${itemId}`;
 	}
 
 	/** Resolve a tag ID to its name */
@@ -115,7 +110,6 @@
 		{:else}
 			<div class="max-h-80 space-y-2 overflow-y-auto">
 				{#each items as item (item.id)}
-					{@const itemUrl = getItemUrl(item.id)}
 					<div class="rounded-xl border border-neutral-700 bg-neutral-800 p-3 transition-all">
 						<div class="flex items-center gap-3">
 							<!-- Thumbnail or fallback icon -->
@@ -146,7 +140,7 @@
 									<button
 										type="button"
 										class="flex min-h-touch min-w-touch items-center justify-center rounded-lg p-2 transition-colors
-										{printStatus[item.id] === 'success'
+									{printStatus[item.id] === 'success'
 											? 'text-success-500'
 											: printStatus[item.id] === 'error'
 												? 'text-error-500'
@@ -171,19 +165,15 @@
 									</button>
 								{/if}
 
-								{#if itemUrl}
-									<!-- eslint-disable svelte/no-navigation-without-resolve -- External URL, not an app route -->
-									<a
-										href={itemUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="flex min-h-touch min-w-touch items-center justify-center rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-primary-400"
-										title="Open in Homebox"
-									>
-										<!-- eslint-enable svelte/no-navigation-without-resolve -->
-										<ExternalLink size={18} strokeWidth={1.5} />
-									</a>
-								{/if}
+								<!-- View item details -->
+								<button
+									type="button"
+									class="flex min-h-touch min-w-touch items-center justify-center rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-700 hover:text-primary-400"
+									title="View details"
+									onclick={() => viewItem(item.id)}
+								>
+									<Package size={18} strokeWidth={1.5} />
+								</button>
 							</div>
 						</div>
 

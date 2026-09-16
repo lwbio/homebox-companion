@@ -18,7 +18,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { afterNavigate, onNavigate } from '$app/navigation';
+	import { onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
 	let { children }: { children: Snippet } = $props();
@@ -71,14 +71,6 @@
 	function handleOffline() {
 		uiStore.setOnline(false);
 	}
-
-	// Scroll to top after each navigation
-	// Note: afterNavigate is automatically cleaned up by SvelteKit when the component unmounts
-	afterNavigate(() => {
-		if (browser) {
-			window.scrollTo({ top: 0, behavior: 'instant' });
-		}
-	});
 
 	// Global page transitions (progressive enhancement)
 	// Uses the native View Transitions API when available.

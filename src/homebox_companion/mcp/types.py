@@ -9,10 +9,11 @@ This module contains the shared types used across MCP tool implementations:
 
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 if TYPE_CHECKING:
     from ..homebox.client import HomeboxClient
@@ -50,6 +51,22 @@ class ToolParams(BaseModel):
         populate_by_name=True,
         extra="forbid",  # Reject unknown parameters
     )
+
+    @field_validator("tag_ids", mode="before", check_fields=False)
+    @classmethod
+    def _parse_json_list(cls, v: Any) -> Any:
+        """Handle LLMs serializing list params as JSON strings.
+
+        LLMs sometimes return '["id1", "id2"]' instead of ['id1', 'id2'].
+        """
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return v
 
 
 ActionType = Literal["create", "update", "delete"]

@@ -2,6 +2,7 @@
 export default {
 	// ── Common ──────────────────────────────────────────────────────────
 	'common.loading': 'Loading...',
+	'common.items': 'Items',
 	'common.cancel': 'Cancel',
 	'common.save': 'Save',
 	'common.confirm': 'Confirm',
@@ -341,6 +342,17 @@ export default {
 	'itemPicker.quantity': 'Quantity: {count}',
 	'itemPicker.clearSelection': 'Clear Selection',
 	'itemPicker.error.loadFailed': 'Failed to load items',
+
+	// ── Item Detail ────────────────────────────────────────────────────
+	'itemDetail.title': 'Item Details',
+	'itemDetail.assetId': 'Asset ID',
+	'itemDetail.manufacturer': 'Manufacturer',
+	'itemDetail.modelNumber': 'Model Number',
+	'itemDetail.serialNumber': 'Serial Number',
+	'itemDetail.purchasePrice': 'Purchase Price',
+	'itemDetail.purchaseFrom': 'Purchased From',
+	'itemDetail.notes': 'Notes',
+	'itemDetail.insured': 'Insured',
 
 	// ── AI Correction Panel ─────────────────────────────────────────────
 	'aiCorrection.title': 'AI Correction',

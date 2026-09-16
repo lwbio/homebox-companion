@@ -9,6 +9,8 @@ Environment Variables:
     HBC_LINK_BASE_URL: Optional public-facing URL for Homebox links shown to users.
         Defaults to HBC_HOMEBOX_URL if not set. Useful when the API is accessed
         internally (e.g., 127.0.0.1) but users access via a public domain.
+    HBC_COMPANION_BASE_URL: Optional public-facing URL for companion app item links.
+        Defaults to empty string (relative paths) if not set.
     HBC_OPENAI_API_KEY: (Legacy) API key for LLM provider (use HBC_LLM_API_KEY instead)
     HBC_OPENAI_MODEL: (Legacy) LLM model to use (use HBC_LLM_MODEL instead, default: gpt-5-mini)
     HBC_LLM_API_KEY: API key for the configured LLM provider (preferred)
@@ -84,6 +86,8 @@ class Settings(BaseSettings):
     homebox_api_key: SecretStr | None = None
     # Optional public-facing URL for links (defaults to homebox_url)
     link_base_url: str = ""
+    # Optional public-facing URL for companion app item links (defaults to empty string for relative paths)
+    companion_base_url: str = ""
 
     # Backward compatibility: Also accepts HBC_OPENAI_API_KEY and HBC_OPENAI_MODEL
     # These are legacy env vars from before the LiteLLM migration
@@ -179,6 +183,14 @@ class Settings(BaseSettings):
     def effective_link_base_url(self) -> str:
         """Public-facing URL for user links (HBC_LINK_BASE_URL or fallback to HBC_HOMEBOX_URL)."""
         return (self.link_base_url or self.homebox_url).rstrip("/")
+
+    @computed_field
+    @property
+    def effective_companion_base_url(self) -> str:
+        """Public-facing URL for companion app item links (HBC_COMPANION_BASE_URL or empty for relative paths)."""
+        if self.companion_base_url:
+            return self.companion_base_url.rstrip("/")
+        return ""
 
     @computed_field
     @property

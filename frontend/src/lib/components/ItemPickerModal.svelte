@@ -46,8 +46,8 @@
 	// Filtered items based on search
 	let filteredItems = $derived(
 		searchQuery.trim() === ''
-			? items
-			: items.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+			? items ?? []
+			: (items ?? []).filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
 	);
 
 	onMount(async () => {
@@ -65,9 +65,21 @@
 	async function loadItems() {
 		isLoading = true;
 		try {
-			items = await itemsApi.list(locationId);
+			const allItemsList: ItemSummary[] = [];
+			let pageNum = 1;
+			const pageSize = 100;
+			let hasMore = true;
+
+			while (hasMore) {
+				const response = await itemsApi.list(locationId, undefined, pageNum, pageSize);
+				const pageItems = response?.items ?? [];
+				allItemsList.push(...pageItems);
+				hasMore = pageItems.length === pageSize;
+				pageNum++;
+			}
+
+			items = allItemsList;
 			log.debug(`Loaded ${items.length} items`);
-			// Fetch thumbnails for items that have them
 			await loadThumbnails(items);
 		} catch (error) {
 			log.error('Failed to load items', error);

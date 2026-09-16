@@ -154,11 +154,15 @@
 		await locationNavigator.clearSelection();
 	}
 
-	function continueToCapture() {
+	async function continueToCapture() {
 		if (!locationStore.selected) {
 			showToast(t('location.error.selectRequired'), 'warning');
 			return;
 		}
+
+		// Mobile camera pickers may reload the page when returning to the browser.
+		// Save the selected location before entering capture so that reload can recover it.
+		await scanWorkflow.persistAsync();
 		goto(resolve('/capture'));
 	}
 

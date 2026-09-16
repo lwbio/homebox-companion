@@ -142,6 +142,17 @@
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
 
+		// Attempt session recovery if location is missing.
+		// This handles cases where the page was reloaded (e.g. mobile camera
+		// capture="environment" causing a full page reload), which recreates the
+		// ScanWorkflow singleton with default state (locationId = null).
+		if (!workflow.state.locationId) {
+			const recovered = await scanWorkflow.recover();
+			if (recovered) {
+				log.info('Session recovered on capture page');
+			}
+		}
+
 		if (!routeGuards.capture()) return;
 
 		// Load capture limits from config

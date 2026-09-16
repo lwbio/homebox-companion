@@ -50,6 +50,40 @@ export interface ItemSummary {
 	thumbnailId?: string | null;
 }
 
+/** Item for the filtered list page (includes tags and location) */
+export interface ItemListItem extends ItemSummary {
+	tags: Array<{ id: string; name: string }>;
+	location?: { id: string; name: string } | null;
+}
+
+/** Paginated response from items list endpoint */
+export interface ItemListResponse {
+	items: ItemListItem[];
+	total: number;
+	page: number;
+	pageSize: number;
+}
+
+/** Full item detail with all fields (from GET /items/{id}) */
+export interface ItemDetail {
+	id: string;
+	name: string;
+	description: string;
+	quantity: number;
+	thumbnailId?: string | null;
+	assetId?: string | null;
+	manufacturer?: string | null;
+	modelNumber?: string | null;
+	serialNumber?: string | null;
+	purchasePrice?: number | null;
+	purchaseFrom?: string | null;
+	notes?: string | null;
+	insured: boolean;
+	tags: Array<{ id: string; name: string }>;
+	location?: { id: string; name: string } | null;
+	path: Array<{ id: string; name: string; type: string }>;
+}
+
 /** Core item fields shared across all item types */
 export interface ItemCore {
 	name: string;

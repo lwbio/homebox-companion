@@ -38,6 +38,7 @@ import {
 	deserializeConfirmedItem,
 } from '$lib/services/serialize';
 import * as sessionPersistence from '$lib/services/sessionPersistence';
+import { createUuid } from '$lib/utils/uuid';
 
 // =============================================================================
 // CONSTANTS
@@ -45,6 +46,17 @@ import * as sessionPersistence from '$lib/services/sessionPersistence';
 
 /** Debounce delay for auto-persist in milliseconds */
 const AUTO_PERSIST_DEBOUNCE_MS = 1000;
+const CAPTURE_CONTEXT_KEY = 'hbc-capture-context';
+const CAPTURE_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface CaptureContext {
+	updatedAt: number;
+	locationId: string;
+	locationName: string;
+	locationPath: string;
+	parentItemId: string | null;
+	parentItemName: string | null;
+}
 
 // =============================================================================
 // SCAN WORKFLOW CLASS
@@ -93,6 +105,8 @@ class ScanWorkflow {
 
 	/** Debounce timer for auto-persist */
 	private _persistTimeout: ReturnType<typeof setTimeout> | null = null;
+	private _persistPromise: Promise<void> | null = null;
+	private _persistDirty = false;
 
 	/** Flag to skip the initial effect run (avoids persist on construction) */
 	private _isFirstEffectRun = true;
@@ -168,6 +182,7 @@ class ScanWorkflow {
 					status === 'analyzing' ||
 					status === 'submitting'
 				) {
+					this.cancelScheduledPersist();
 					return;
 				}
 
@@ -185,13 +200,35 @@ class ScanWorkflow {
 
 	/** Schedule a debounced persist (1 second delay) */
 	private schedulePersist(): void {
-		if (this._persistTimeout) {
-			clearTimeout(this._persistTimeout);
-		}
+		this.cancelScheduledPersist();
 		this._persistTimeout = setTimeout(() => {
 			this._persistTimeout = null;
-			this._doPersist();
+			void this.runPersist();
 		}, AUTO_PERSIST_DEBOUNCE_MS);
+	}
+
+	private cancelScheduledPersist(): void {
+		if (this._persistTimeout !== null) {
+			clearTimeout(this._persistTimeout);
+			this._persistTimeout = null;
+		}
+	}
+
+	/** Deduplicate persistence so image serialization never runs concurrently. */
+	private runPersist(): Promise<void> {
+		if (!this._persistPromise) {
+			this._persistDirty = false;
+			this._persistPromise = this._doPersist().finally(() => {
+				this._persistPromise = null;
+				if (this._persistDirty) {
+					this._persistDirty = false;
+					void this.runPersist();
+				}
+			});
+		} else {
+			this._persistDirty = true;
+		}
+		return this._persistPromise;
 	}
 
 	/**
@@ -205,11 +242,10 @@ class ScanWorkflow {
 	private flushPendingPersist(): void {
 		if (this.failedItemEditIndex !== null) return;
 
-		if (this._persistTimeout) {
-			clearTimeout(this._persistTimeout);
-			this._persistTimeout = null;
+		if (this._persistTimeout !== null) {
+			this.cancelScheduledPersist();
 			// Fire-and-forget: browser may not wait for this to complete
-			this._doPersist();
+			void this.runPersist();
 		}
 	}
 
@@ -430,6 +466,7 @@ class ScanWorkflow {
 		this._locationPath = path;
 		this._status = 'capturing';
 		this._error = null;
+		this.persistCaptureContext();
 	}
 
 	/** Clear location selection (also clears parent item since it's location-specific) */
@@ -440,18 +477,21 @@ class ScanWorkflow {
 		this._parentItemId = null;
 		this._parentItemName = null;
 		this._status = 'location';
+		this.clearCaptureContext();
 	}
 
 	/** Set the parent item (for sub-item relationships) */
 	setParentItem(id: string, name: string): void {
 		this._parentItemId = id;
 		this._parentItemName = name;
+		this.persistCaptureContext();
 	}
 
 	/** Clear parent item selection */
 	clearParentItem(): void {
 		this._parentItemId = null;
 		this._parentItemName = null;
+		this.persistCaptureContext();
 	}
 
 	// =========================================================================
@@ -513,10 +553,18 @@ class ScanWorkflow {
 		}
 
 		log.info(`Starting analysis for ${this.captureService.count} image(s)`);
+		this.cancelScheduledPersist();
+		const activePersist = this._persistPromise;
 
-		// Set status BEFORE any async operations to prevent duplicate triggers
+		// Set status before awaiting an active save to prevent duplicate analysis requests.
 		this._status = 'analyzing';
 		this._error = null;
+		if (activePersist) {
+			log.debug('Waiting for active session persistence before analysis');
+			await activePersist;
+			if (this._status !== 'analyzing') return;
+		}
+
 		log.debug('Status set to "analyzing", delegating to AnalysisService');
 
 		const result = await this.analysisService.analyze(this.captureService.images);
@@ -571,10 +619,14 @@ class ScanWorkflow {
 		}
 
 		log.info(`Retrying ${this.analysisService.failedCount} failed image(s)`);
-
-		// Set status to analyzing
+		this.cancelScheduledPersist();
+		const activePersist = this._persistPromise;
 		this._status = 'analyzing';
 		this._error = null;
+		if (activePersist) {
+			await activePersist;
+			if (this._status !== 'analyzing') return;
+		}
 
 		// Get existing items
 		const existingItems = this.reviewService.detectedItems;
@@ -898,8 +950,22 @@ class ScanWorkflow {
 			};
 		}
 
+		this.cancelScheduledPersist();
 		this._status = 'submitting';
 		this._error = null;
+		// Wait for any in-flight persist before uploading images
+		if (this._persistPromise) {
+			log.debug('Waiting for active session persistence before submission');
+			await this._persistPromise;
+			if (this._status !== 'submitting')
+				return {
+					success: false,
+					successCount: 0,
+					partialSuccessCount: 0,
+					failCount: 0,
+					sessionExpired: false,
+				};
+		}
 
 		const result = await this.submissionService.submitAll(
 			items,
@@ -963,7 +1029,21 @@ class ScanWorkflow {
 			};
 		}
 
+		this.cancelScheduledPersist();
 		this._error = null;
+		// Wait for any in-flight persist before uploading images
+		if (this._persistPromise) {
+			log.debug('Waiting for active session persistence before retry');
+			await this._persistPromise;
+			if (this._status !== 'submitting')
+				return {
+					success: false,
+					successCount: 0,
+					partialSuccessCount: 0,
+					failCount: 0,
+					sessionExpired: false,
+				};
+		}
 
 		const result = await this.submissionService.retryFailed(
 			items,
@@ -1016,7 +1096,13 @@ class ScanWorkflow {
 			return;
 		}
 
-		await this._doPersist();
+		this.cancelScheduledPersist();
+		try {
+			await this.runPersist();
+		} finally {
+			// State changes during the explicit save may have scheduled a duplicate write.
+			this.cancelScheduledPersist();
+		}
 	}
 
 	/**
@@ -1054,7 +1140,7 @@ class ScanWorkflow {
 				this._persistedCreatedAt = now;
 			}
 			if (this._persistedSessionId === null) {
-				this._persistedSessionId = crypto.randomUUID();
+				this._persistedSessionId = createUuid();
 				log.info(`New session created: ${this._persistedSessionId}`);
 			}
 
@@ -1118,7 +1204,7 @@ class ScanWorkflow {
 		try {
 			const session = await sessionPersistence.load(scope);
 			if (!session) {
-				return false;
+				return this.recoverCaptureContext();
 			}
 			if (generation !== this.contextGeneration) return false;
 
@@ -1190,7 +1276,80 @@ class ScanWorkflow {
 			log.error(`Failed to recover session: [${errorName}] ${errorMessage}`);
 			// Clear corrupted session
 			await this.clearPersistedSession();
+			return this.recoverCaptureContext();
+		}
+	}
+
+	/** Save enough state synchronously to survive mobile camera page recreation. */
+	private persistCaptureContext(): void {
+		if (
+			typeof localStorage === 'undefined' ||
+			!this._locationId ||
+			!this._locationName ||
+			this._locationPath === null
+		) {
+			return;
+		}
+
+		const context: CaptureContext = {
+			updatedAt: Date.now(),
+			locationId: this._locationId,
+			locationName: this._locationName,
+			locationPath: this._locationPath,
+			parentItemId: this._parentItemId,
+			parentItemName: this._parentItemName,
+		};
+
+		try {
+			localStorage.setItem(CAPTURE_CONTEXT_KEY, JSON.stringify(context));
+		} catch (error) {
+			log.warn('Failed to persist capture context', error);
+		}
+	}
+
+	/** Restore location context when full IndexedDB session recovery is unavailable. */
+	private recoverCaptureContext(): boolean {
+		if (typeof localStorage === 'undefined') return false;
+
+		try {
+			const stored = localStorage.getItem(CAPTURE_CONTEXT_KEY);
+			if (!stored) return false;
+
+			const context = JSON.parse(stored) as CaptureContext;
+			if (
+				!context.locationId ||
+				!context.locationName ||
+				typeof context.locationPath !== 'string' ||
+				!Number.isFinite(context.updatedAt) ||
+				Date.now() - context.updatedAt > CAPTURE_CONTEXT_TTL_MS
+			) {
+				this.clearCaptureContext();
+				return false;
+			}
+
+			this._locationId = context.locationId;
+			this._locationName = context.locationName;
+			this._locationPath = context.locationPath;
+			this._parentItemId = context.parentItemId ?? null;
+			this._parentItemName = context.parentItemName ?? null;
+			this._status = 'capturing';
+			this._error = null;
+			log.info('Recovered capture location from lightweight context');
+			return true;
+		} catch (error) {
+			log.warn('Failed to recover capture context', error);
+			this.clearCaptureContext();
 			return false;
+		}
+	}
+
+	private clearCaptureContext(): void {
+		if (typeof localStorage === 'undefined') return;
+
+		try {
+			localStorage.removeItem(CAPTURE_CONTEXT_KEY);
+		} catch (error) {
+			log.warn('Failed to clear capture context', error);
 		}
 	}
 
@@ -1225,10 +1384,7 @@ class ScanWorkflow {
 		const scope = sessionPersistence.captureSessionScope();
 		this.contextGeneration++;
 		// Cancel any pending debounced persist to prevent stale writes after reset
-		if (this._persistTimeout) {
-			clearTimeout(this._persistTimeout);
-			this._persistTimeout = null;
-		}
+		this.cancelScheduledPersist();
 		this.cancelAnalysis();
 		this.captureService.clear();
 		this.reviewService.reset();
@@ -1243,6 +1399,7 @@ class ScanWorkflow {
 		this._error = null;
 		this._persistedCreatedAt = null; // Reset for next session
 		this._persistedSessionId = null; // Reset for next session
+		this.clearCaptureContext();
 		if (clearPersisted && scope) void sessionPersistence.clear(scope);
 	}
 
@@ -1268,6 +1425,7 @@ class ScanWorkflow {
 			this._parentItemId = parentItemId;
 			this._parentItemName = parentItemName;
 			this._status = 'capturing';
+			this.persistCaptureContext();
 		} else {
 			this._status = 'location';
 		}

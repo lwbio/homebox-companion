@@ -209,8 +209,9 @@ Search behavior
 
 Response style (default)
 - Lead with the best match.
-- Use markdown links exactly as provided: items as [Name](item.url), locations as [Name](location.url),
-  tags as [Name](tag.url).
+- Use markdown links exactly as provided: items as [Name](item.url) (internal companion app detail page),
+  locations as [Name](location.url) (companion app items list filtered by location),
+  tags as [Name](tag.url) (companion app items list filtered by tag).
 - Keep lists minimal (usually one item per line).
 - IMPORTANT: When the user asks for "all", "full", "hierarchical", or "complete" data, provide ALL results
   in a single response. Do not split, truncate, or summarize unless the user explicitly asks for a summary.

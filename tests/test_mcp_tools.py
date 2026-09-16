@@ -294,11 +294,11 @@ class TestListTags:
         assert result.data[0]["id"] == "tag1"
         assert result.data[0]["name"] == "Electronics"
         assert "url" in result.data[0]
-        assert "items?tags=tag1" in result.data[0]["url"]
+        assert "items?tag=tag1" in result.data[0]["url"]
         assert result.data[1]["id"] == "tag2"
         assert result.data[1]["name"] == "Furniture"
         assert "url" in result.data[1]
-        assert "items?tags=tag2" in result.data[1]["url"]
+        assert "items?tag=tag2" in result.data[1]["url"]
         mock_client.list_tags.assert_called_once_with("test-token")
 
 

@@ -181,8 +181,8 @@ class ListTagsTool:
         logger.debug(f"list_tags returned {len(tags)} tags")
 
         # Add URL to each tag for easy linking in chat
-        base_url = settings.effective_link_base_url
-        enriched_tags = [{**tag, "url": f"{base_url}/items?tags={tag.get('id', '')}"} for tag in tags]
+        base_url = settings.effective_companion_base_url
+        enriched_tags = [{**tag, "url": f"{base_url}/items?tag={tag.get('id', '')}"} for tag in tags]
 
         return ToolResult(success=True, data=enriched_tags)
 
