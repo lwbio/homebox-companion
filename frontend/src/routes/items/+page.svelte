@@ -8,7 +8,7 @@
 	import { getInitPromise } from '$lib/services/tokenRefresh';
 	import { routeGuards } from '$lib/utils/routeGuard';
 	import Loader from '$lib/components/Loader.svelte';
-	import { t } from '$lib/i18n/reactive.svelte';
+	import { getLocale, t } from '$lib/i18n/reactive.svelte';
 	import { Package, MapPin, Tag, ArrowLeft } from 'lucide-svelte';
 	import type { ItemListItem } from '$lib/types';
 
@@ -28,7 +28,21 @@
 
 	const locationId = $derived(page.url.searchParams.get('location_id'));
 	const tagId = $derived(page.url.searchParams.get('tag'));
+	const returnTo = $derived(page.url.searchParams.get('return_to'));
 	const hasMore = $derived(allItems.length < total);
+	const dateFormatter = $derived(
+		new Intl.DateTimeFormat(getLocale() === 'zh' ? 'zh-CN' : 'en-US', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+		})
+	);
+
+	function formatCreatedDate(value: string | null | undefined): string | null {
+		if (!value) return null;
+		const date = new Date(value);
+		return Number.isNaN(date.getTime()) ? null : dateFormatter.format(date);
+	}
 
 	onMount(async () => {
 		await getInitPromise();
@@ -62,10 +76,18 @@
 		}
 	});
 
-	let prevLocationId = $state(locationId);
-	let prevTagId = $state(tagId);
+	let prevLocationId = $state<string | null>(null);
+	let prevTagId = $state<string | null>(null);
+	let filtersInitialized = false;
 
 	$effect(() => {
+		if (!filtersInitialized) {
+			prevLocationId = locationId;
+			prevTagId = tagId;
+			filtersInitialized = true;
+			return;
+		}
+
 		if (locationId !== prevLocationId || tagId !== prevTagId) {
 			prevLocationId = locationId;
 			prevTagId = tagId;
@@ -169,9 +191,21 @@
 	function goBack() {
 		if (window.history.length > 1) {
 			window.history.back();
-		} else {
-			goto('/');
+			return;
 		}
+
+		if (returnTo) {
+			const returnUrl = new URL(returnTo, window.location.origin);
+			if (
+				returnUrl.origin === window.location.origin &&
+				returnUrl.pathname === resolve('/location')
+			) {
+				goto(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`);
+				return;
+			}
+		}
+
+		goto('/');
 	}
 </script>
 
@@ -227,6 +261,7 @@
 	{:else}
 		<div class="space-y-2">
 			{#each allItems as item (item.id)}
+				{@const createdDate = formatCreatedDate(item.createdAt)}
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900 p-3 text-left transition-colors hover:border-neutral-600 hover:bg-neutral-800"
@@ -272,6 +307,17 @@
 							{/each}
 						</div>
 					</div>
+
+					{#if createdDate}
+						<div class="shrink-0 text-right">
+							<time
+								datetime={item.createdAt ?? undefined}
+								class="whitespace-nowrap text-caption text-neutral-400"
+							>
+								{createdDate}
+							</time>
+						</div>
+					{/if}
 				</button>
 			{/each}
 
@@ -284,7 +330,7 @@
 				</div>
 			{/if}
 			{#if loadMoreError}
-				<p class="py-2 text-center text-caption text-error-400">{loadMoreError}</p>
+				<p class="text-error-400 py-2 text-center text-caption">{loadMoreError}</p>
 			{/if}
 		</div>
 	{/if}

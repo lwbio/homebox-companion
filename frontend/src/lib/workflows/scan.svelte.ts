@@ -107,6 +107,10 @@ class ScanWorkflow {
 	private _persistTimeout: ReturnType<typeof setTimeout> | null = null;
 	private _persistPromise: Promise<void> | null = null;
 	private _persistDirty = false;
+	/** Invalidates in-flight writes when the workflow is reset. */
+	private _persistGeneration = 0;
+	/** Detects capture-context changes while analysis startup is awaiting persistence. */
+	private _captureRevision = 0;
 
 	/** Flag to skip the initial effect run (avoids persist on construction) */
 	private _isFirstEffectRun = true;
@@ -201,6 +205,10 @@ class ScanWorkflow {
 	/** Schedule a debounced persist (1 second delay) */
 	private schedulePersist(): void {
 		this.cancelScheduledPersist();
+		if (this._persistPromise) {
+			this._persistDirty = true;
+			return;
+		}
 		this._persistTimeout = setTimeout(() => {
 			this._persistTimeout = null;
 			void this.runPersist();
@@ -456,6 +464,7 @@ class ScanWorkflow {
 
 	/** Set the selected location (clears parent item since items are location-specific) */
 	setLocation(id: string, name: string, path: string): void {
+		this._captureRevision++;
 		// If changing to a different location, clear parent item
 		if (this._locationId !== id) {
 			this._parentItemId = null;
@@ -471,6 +480,7 @@ class ScanWorkflow {
 
 	/** Clear location selection (also clears parent item since it's location-specific) */
 	clearLocation(): void {
+		this._captureRevision++;
 		this._locationId = null;
 		this._locationName = null;
 		this._locationPath = null;
@@ -482,6 +492,7 @@ class ScanWorkflow {
 
 	/** Set the parent item (for sub-item relationships) */
 	setParentItem(id: string, name: string): void {
+		this._captureRevision++;
 		this._parentItemId = id;
 		this._parentItemName = name;
 		this.persistCaptureContext();
@@ -489,6 +500,7 @@ class ScanWorkflow {
 
 	/** Clear parent item selection */
 	clearParentItem(): void {
+		this._captureRevision++;
 		this._parentItemId = null;
 		this._parentItemName = null;
 		this.persistCaptureContext();
@@ -500,11 +512,13 @@ class ScanWorkflow {
 
 	/** Add a captured image */
 	addImage(image: CapturedImage): void {
+		this._captureRevision++;
 		this.captureService.addImage(image);
 	}
 
 	/** Remove an image by index */
 	removeImage(index: number): void {
+		this._captureRevision++;
 		this.captureService.removeImage(index);
 	}
 
@@ -513,21 +527,25 @@ class ScanWorkflow {
 		index: number,
 		options: Partial<Pick<CapturedImage, 'separateItems' | 'extraInstructions' | 'assetId'>>
 	): void {
+		this._captureRevision++;
 		this.captureService.updateImageOptions(index, options);
 	}
 
 	/** Add additional images to a captured image */
 	addAdditionalImages(imageIndex: number, files: File[], dataUrls: string[]): void {
+		this._captureRevision++;
 		this.captureService.addAdditionalImages(imageIndex, files, dataUrls);
 	}
 
 	/** Remove an additional image */
 	removeAdditionalImage(imageIndex: number, additionalIndex: number): void {
+		this._captureRevision++;
 		this.captureService.removeAdditionalImage(imageIndex, additionalIndex);
 	}
 
 	/** Clear all captured images */
 	clearImages(): void {
+		this._captureRevision++;
 		this.captureService.clear();
 	}
 
@@ -553,18 +571,27 @@ class ScanWorkflow {
 		}
 
 		log.info(`Starting analysis for ${this.captureService.count} image(s)`);
+		const expectedImages = this.captureService.images;
+		const expectedLocationId = this._locationId;
+		const expectedCaptureRevision = this._captureRevision;
 		this.cancelScheduledPersist();
-		const activePersist = this._persistPromise;
 
-		// Set status before awaiting an active save to prevent duplicate analysis requests.
-		this._status = 'analyzing';
-		this._error = null;
-		if (activePersist) {
-			log.debug('Waiting for active session persistence before analysis');
-			await activePersist;
-			if (this._status !== 'analyzing') return;
+		// Save while still in a persistable state. The auto-save is debounced, so a
+		// fast click on Analyze can otherwise cancel the only pending image save.
+		log.debug('Persisting captured images before entering analysis');
+		await this.persistAsync();
+		if (
+			this._status !== 'capturing' ||
+			this._locationId !== expectedLocationId ||
+			this._captureRevision !== expectedCaptureRevision ||
+			this.captureService.images !== expectedImages
+		) {
+			log.warn('Capture state changed while preparing analysis, aborting');
+			return;
 		}
 
+		this._status = 'analyzing';
+		this._error = null;
 		log.debug('Status set to "analyzing", delegating to AnalysisService');
 
 		const result = await this.analysisService.analyze(this.captureService.images);
@@ -752,7 +779,10 @@ class ScanWorkflow {
 
 	/** Cancel ongoing analysis */
 	async cancelAnalysis(): Promise<void> {
-		this.analysisService.cancel();
+		log.info(
+			`ScanWorkflow.cancelAnalysis() called: status=${this._status}, images=${this.captureService.count}`
+		);
+		this.analysisService.cancel('user');
 		if (this._status === 'analyzing') {
 			// If we had some successful items before cancellation, go to partial_analysis
 			// Otherwise go back to capturing
@@ -1099,6 +1129,11 @@ class ScanWorkflow {
 		this.cancelScheduledPersist();
 		try {
 			await this.runPersist();
+			// A state change while the first save was running can queue a dirty
+			// follow-up. Drain the entire chain before image upload may begin.
+			while (this._persistPromise) {
+				await this._persistPromise;
+			}
 		} finally {
 			// State changes during the explicit save may have scheduled a duplicate write.
 			this.cancelScheduledPersist();
@@ -1113,6 +1148,7 @@ class ScanWorkflow {
 		const scope = sessionPersistence.captureSessionScope();
 		const generation = this.contextGeneration;
 		if (!scope) return;
+		const persistGeneration = this._persistGeneration;
 
 		try {
 			// Step 1: Serialize images (convert File objects to base64)
@@ -1169,6 +1205,10 @@ class ScanWorkflow {
 				imageStatuses,
 				submission: this.submissionService.snapshot(),
 			};
+			if (persistGeneration !== this._persistGeneration) {
+				log.debug('Skipping stale session persistence after workflow reset');
+				return;
+			}
 			log.debug('_doPersist: Session object built, saving to IndexedDB...');
 
 			// Step 6: Save to IndexedDB
@@ -1385,7 +1425,12 @@ class ScanWorkflow {
 		this.contextGeneration++;
 		// Cancel any pending debounced persist to prevent stale writes after reset
 		this.cancelScheduledPersist();
-		this.cancelAnalysis();
+		// Do not call cancelAnalysis() here: that method intentionally persists the
+		// cancellation state, while reset must invalidate and discard this session.
+		this._persistGeneration++;
+		this.analysisService.cancel('workflow-reset');
+		this.analysisService.clearProgress();
+		this._persistDirty = false;
 		this.captureService.clear();
 		this.reviewService.reset();
 		this.submissionService.reset();

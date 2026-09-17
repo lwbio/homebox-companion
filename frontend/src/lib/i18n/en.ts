@@ -354,6 +354,7 @@ export default {
 	'itemDetail.purchaseFrom': 'Purchased From',
 	'itemDetail.notes': 'Notes',
 	'itemDetail.insured': 'Insured',
+	'itemDetail.createdTime': 'Time added',
 
 	// ── AI Correction Panel ─────────────────────────────────────────────
 	'aiCorrection.title': 'AI Correction',

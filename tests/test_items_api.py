@@ -54,6 +54,7 @@ async def test_get_item_uses_thumbnail_id(app_with_mock):
         "name": "Test Item",
         "quantity": 1,
         "thumbnailId": "thumb-from-api",
+        "createdAt": "2026-09-17T03:04:43Z",
         "attachments": [{"id": "first-attachment"}],
         "tags": [],
     }
@@ -61,6 +62,7 @@ async def test_get_item_uses_thumbnail_id(app_with_mock):
     resp = await client.get("/api/items/item-1", headers=_auth_headers())
     assert resp.status_code == 200
     assert resp.json()["thumbnailId"] == "thumb-from-api"
+    assert resp.json()["createdAt"] == "2026-09-17T03:04:43Z"
 
 
 @pytest.mark.asyncio
@@ -111,6 +113,7 @@ async def test_list_items_location_parent(app_with_mock):
                 "id": "item-loc",
                 "name": "Located Item",
                 "quantity": 1,
+                "createdAt": "2026-09-17T03:04:43Z",
                 "tags": [],
                 "parent": {
                     "id": "loc-1",
@@ -127,6 +130,7 @@ async def test_list_items_location_parent(app_with_mock):
     items = resp.json()["items"]
     assert len(items) == 1
     assert items[0]["location"] == {"id": "loc-1", "name": "Garage"}
+    assert items[0]["createdAt"] == "2026-09-17T03:04:43Z"
 
 
 @pytest.mark.asyncio

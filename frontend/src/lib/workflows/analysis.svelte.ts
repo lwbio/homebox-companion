@@ -381,7 +381,10 @@ export class AnalysisService {
 	}
 
 	/** Cancel ongoing analysis */
-	cancel(): void {
+	cancel(reason = 'unspecified'): void {
+		log.info(
+			`Analysis cancellation requested: reason=${reason}, active=${this.abortController !== null}, session=${this.sessionId ?? 'none'}`
+		);
 		if (this.abortController) {
 			this.abortController.abort();
 			this.abortController = null;

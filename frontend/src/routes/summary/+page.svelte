@@ -17,6 +17,7 @@
 	import AppContainer from '$lib/components/AppContainer.svelte';
 	import DuplicateWarningIcon from '$lib/components/DuplicateWarningIcon.svelte';
 	import { t } from '$lib/i18n/reactive.svelte';
+	import { workflowLogger as log } from '$lib/utils/logger';
 	import {
 		MapPin,
 		ImageIcon,
@@ -64,11 +65,17 @@
 
 	// Apply route guard
 	onMount(async () => {
+		log.info(
+			`Summary mounted: status=${workflow.state.status}, confirmed=${workflow.state.confirmedItems.length}`
+		);
 		// Wait for auth initialization to complete to avoid race conditions
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
 
-		if (!routeGuards.summary()) return;
+		if (!routeGuards.summary()) {
+			log.warn(`Summary route blocked: status=${workflow.state.status}`);
+			return;
+		}
 
 		// Show toast if any items have potential duplicates
 		const duplicateCount = confirmedItems.filter((item) => item.duplicate_match).length;
@@ -116,6 +123,7 @@
 			showToast(t('summary.error.noItems'), 'warning');
 			return;
 		}
+		log.info(`Summary submit clicked: confirmed=${confirmedItems.length}`);
 
 		isSubmitting = true;
 		// Scroll to top of app
@@ -123,6 +131,9 @@
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 		}, 100);
 		const result = await workflow.submitAll();
+		log.info(
+			`Summary submit completed: success=${result.success}, succeeded=${result.successCount}, partial=${result.partialSuccessCount}, failed=${result.failCount}, sessionExpired=${result.sessionExpired}`
+		);
 		isSubmitting = false;
 
 		if (result.sessionExpired) {

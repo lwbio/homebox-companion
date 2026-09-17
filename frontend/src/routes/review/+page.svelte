@@ -145,11 +145,17 @@
 
 	// Apply route guard
 	onMount(async () => {
+		log.info(
+			`Review mounted: status=${workflow.state.status}, detected=${workflow.state.detectedItems.length}, confirmed=${workflow.state.confirmedItems.length}, index=${workflow.state.currentReviewIndex}`
+		);
 		// Wait for auth initialization to complete to avoid race conditions
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
 
-		if (!routeGuards.review()) return;
+		if (!routeGuards.review()) {
+			log.warn(`Review route blocked: status=${workflow.state.status}`);
+			return;
+		}
 
 		// Load capture limits from config
 		try {
@@ -169,11 +175,15 @@
 	// Watch for status changes
 	$effect(() => {
 		if (workflow.state.status === 'confirming') {
+			log.info(
+				`Navigating from review to summary: confirmed=${workflow.state.confirmedItems.length}`
+			);
 			goto(resolve('/summary'));
 		}
 	});
 
 	async function goBack() {
+		log.info('Review back clicked');
 		if (workflow.isEditingFailedItem) {
 			await workflow.cancelFailedItemEdit();
 			goto(resolve('/summary'));
@@ -184,6 +194,7 @@
 	}
 
 	function skipItem() {
+		log.info(`Review skip clicked: index=${currentIndex}, item=${editedItem?.name ?? 'none'}`);
 		workflow.skipItem();
 
 		// Scroll to top for next item
@@ -241,6 +252,7 @@
 	function confirmItem() {
 		const item = prepareItemForConfirmation();
 		if (!item) return;
+		log.info(`Review confirm clicked: index=${currentIndex}, item=${item.name}`);
 
 		workflow.confirmItem(item);
 
@@ -250,10 +262,12 @@
 
 	function handleLongPressConfirm() {
 		if (workflow.isEditingFailedItem) return;
+		log.info(`Review confirm long-press detected: index=${currentIndex}`);
 		showConfirmAllDialog = true;
 	}
 
 	function handleConfirmAll() {
+		log.info(`Review confirm-all accepted: index=${currentIndex}, remaining=${remainingCount}`);
 		// Prepare the current item with any user edits
 		const preparedItem = prepareItemForConfirmation();
 

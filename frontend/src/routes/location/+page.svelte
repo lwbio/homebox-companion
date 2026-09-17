@@ -98,19 +98,113 @@
 	// one-time setup (recovery / saved path) have completed in onMount.
 	let navigationReady = $state(false);
 	// Plain (non-reactive) variable — only used internally to dedupe URL syncs.
-	let lastHandledLoc: string | null | undefined = undefined;
+	let lastHandledRoute: string | null = null;
+	let navigationRequestId = 0;
+
+	function locationRoute(locId: string | null, selectedId: string | null = null): string {
+		const params = new URLSearchParams();
+		if (locId) params.set('loc', locId);
+		if (selectedId) params.set('selected', selectedId);
+		const query = params.toString();
+		return `/location${query ? `?${query}` : ''}`;
+	}
+
+	function locationHref(locId: string | null, selectedId: string | null = null): string {
+		const route = locationRoute(locId, selectedId);
+		return `${resolve('/location')}${route.slice('/location'.length)}`;
+	}
+
+	function currentBrowseLocationId(): string | null {
+		return page.url.searchParams.get('loc');
+	}
+
+	function parentLocationRoute(): string {
+		const parent = locationStore.path[locationStore.path.length - 2];
+		return locationRoute(parent?.id ?? null);
+	}
 
 	// Drive navigation from the URL. Handles the initial load, SPA navigation
 	// (clicking a location/breadcrumb) and browser back/forward.
 	$effect(() => {
 		const locId = page.url.searchParams.get('loc');
-		if (!navigationReady || locId === lastHandledLoc) return;
-		lastHandledLoc = locId;
-		void navigateFromUrl(locId);
+		const selectedId = page.url.searchParams.get('selected');
+		const routeKey = `${locId ?? ''}:${selectedId ?? ''}`;
+		if (!navigationReady || routeKey === lastHandledRoute) return;
+		lastHandledRoute = routeKey;
+		void navigateFromUrl(locId, selectedId);
 	});
 
-	async function navigateFromUrl(locId: string | null): Promise<void> {
-		await locationNavigator.navigateToId(locId);
+	async function navigateFromUrl(locId: string | null, selectedId: string | null): Promise<void> {
+		const requestId = ++navigationRequestId;
+		log.debug(`Navigating from URL: loc=${locId ?? 'root'}, selected=${selectedId ?? 'none'}`);
+
+		// A browser Back from the selected URL removes `selected` first. Clear the
+		// selected card immediately, then restore the browse level from `loc`.
+		if (locationStore.selected && locationStore.selected.id !== selectedId) {
+			locationNavigator.clearSelectedLocation();
+		}
+
+		const currentPathId = locationStore.path[locationStore.path.length - 1]?.id ?? null;
+		const browseStateMatchesUrl = locId
+			? currentPathId === locId && locationNavigator.currentLocation?.id === locId
+			: locationStore.tree.length > 0 &&
+				locationStore.path.length === 0 &&
+				locationNavigator.currentLocation === null;
+		if (browseStateMatchesUrl) locationNavigator.cancelPendingNavigation();
+		const result = browseStateMatchesUrl ? 'success' : await locationNavigator.navigateToId(locId);
+		if (requestId !== navigationRequestId) return;
+
+		if (result === 'not-found' && locId) {
+			log.warn(`Location route target not found, normalizing to root: ${locId}`);
+			if (locationStore.selected) locationNavigator.clearSelectedLocation();
+			lastHandledRoute = ':';
+			await goto(locationHref(null), { replaceState: true });
+			return;
+		}
+		if (result !== 'success') return;
+
+		if (selectedId) {
+			let selected = locationStore.flatList.find((item) => item.location.id === selectedId);
+			if (!selected && locationStore.selected?.id === selectedId) {
+				selected = {
+					location: locationStore.selected,
+					path: locationStore.selectedPath || locationStore.selected.name,
+					displayName: locationStore.selected.name,
+				};
+			}
+			if (!selected) {
+				try {
+					const location = await locationsApi.get(selectedId);
+					if (requestId !== navigationRequestId) return;
+					selected = {
+						location: {
+							id: location.id,
+							name: location.name,
+							description: location.description || '',
+							itemCount: location.itemCount ?? 0,
+							children: location.children || [],
+						},
+						path: location.name,
+						displayName: location.name,
+					};
+				} catch (error) {
+					log.warn(`Failed to resolve selected location ${selectedId}`, error);
+				}
+			}
+			if (!selected) {
+				log.warn(`Selected location not found, removing selection from URL: ${selectedId}`);
+				lastHandledRoute = `${locId ?? ''}:`;
+				await goto(locationHref(locId), { replaceState: true });
+				return;
+			}
+			if (
+				locationStore.selected?.id !== selectedId ||
+				scanWorkflow.state.locationId !== selectedId
+			) {
+				locationNavigator.selectLocation(selected.location, selected.path);
+			}
+		}
+
 		await fetchTags();
 	}
 
@@ -120,7 +214,22 @@
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
 
+		const selectedId = page.url.searchParams.get('selected');
+		if (
+			selectedId &&
+			scanWorkflow.state.status === 'capturing' &&
+			scanWorkflow.state.locationId === selectedId
+		) {
+			// Browser/system Back from capture lands on the selected location URL.
+			// Release the workflow route lock without clearing the visible selection;
+			// URL synchronization below immediately restores the workflow context.
+			log.info(`Returning from capture to selected location: ${selectedId}`);
+			scanWorkflow.clearLocation();
+		}
+
 		if (!routeGuards.location()) return;
+		// Remove the legacy path handoff now that items uses an explicit return URL.
+		sessionStorage.removeItem('locationNavPath');
 
 		// Check for recoverable session
 		try {
@@ -132,29 +241,12 @@
 			log.warn('Failed to check for recoverable session:', err);
 		}
 
-		// Check for saved navigation path (e.g., returning from items list)
-		const savedPathJson = sessionStorage.getItem('locationNavPath');
-		if (savedPathJson) {
-			sessionStorage.removeItem('locationNavPath');
-			try {
-				const savedPath = JSON.parse(savedPathJson) as { id: string; name: string }[];
-				const lastId = savedPath[savedPath.length - 1]?.id;
-				if (lastId) {
-					lastHandledLoc = lastId;
-					navigationReady = true;
-					await goto(`/location?loc=${lastId}`, { replaceState: true });
-					await navigateFromUrl(lastId);
-					return;
-				}
-			} catch (err) {
-				log.warn('Failed to restore navigation path:', err);
-			}
-		}
-
 		// Initial navigation driven by the current URL (null → root tree).
-		lastHandledLoc = page.url.searchParams.get('loc');
+		const initialLocId = page.url.searchParams.get('loc');
+		const initialSelectedId = page.url.searchParams.get('selected');
+		lastHandledRoute = `${initialLocId ?? ''}:${initialSelectedId ?? ''}`;
 		navigationReady = true;
-		await navigateFromUrl(lastHandledLoc);
+		await navigateFromUrl(initialLocId, initialSelectedId);
 	});
 
 	// Handler for pull-to-refresh: refreshes current view without resetting navigation
@@ -182,21 +274,35 @@
 		}
 	}
 
-	function selectFromSearch(item: { location: Location; path: string }) {
+	async function selectLocation(item: { location: Location; path: string }): Promise<void> {
 		locationNavigator.selectLocation(item.location, item.path);
+		await goto(locationHref(currentBrowseLocationId(), item.location.id), {
+			state: { locationSelection: true },
+		});
+	}
+
+	async function selectFromSearch(item: { location: Location; path: string }) {
+		await selectLocation(item);
 		searchQuery = '';
 	}
 
-	function selectCurrentLocation() {
+	async function selectCurrentLocation() {
 		// Use the stored current location (set by navigateToId) instead of traversing stale tree
 		if (locationNavigator.currentLocation) {
 			const pathStr = locationStore.path.map((p) => p.name).join(' / ');
-			locationNavigator.selectLocation(locationNavigator.currentLocation, pathStr);
+			await selectLocation({ location: locationNavigator.currentLocation, path: pathStr });
 		}
 	}
 
-	async function changeSelection() {
-		await locationNavigator.clearSelection();
+	function changeSelection() {
+		if (page.state.locationSelection && window.history.length > 1) {
+			window.history.back();
+			return;
+		}
+
+		locationNavigator.clearSelectedLocation();
+		lastHandledRoute = `${currentBrowseLocationId() ?? ''}:`;
+		void goto(locationHref(currentBrowseLocationId()), { replaceState: true });
 	}
 
 	async function continueToCapture() {
@@ -331,7 +437,7 @@
 				children: location.children || [],
 			};
 
-			locationNavigator.selectLocation(locationData, locationPath);
+			await selectLocation({ location: locationData, path: locationPath });
 		} catch (error) {
 			log.error('QR scan error', error);
 			if (error instanceof ApiError) {
@@ -378,8 +484,10 @@
 				showToast(t('location.success.recovered'), 'success');
 				// Navigate based on recovered status
 				const status = scanWorkflow.state.status;
-				if (status === 'reviewing' || status === 'confirming') {
+				if (status === 'reviewing') {
 					goto(resolve('/review'));
+				} else if (status === 'confirming' || status === 'submitting') {
+					goto(resolve('/summary'));
 				} else if (status === 'capturing' || status === 'partial_analysis') {
 					goto(resolve('/capture'));
 				}
@@ -428,7 +536,11 @@
 		{/if}
 
 		{#if locationStore.selected}
-			<BackLink href="/location" label={t('location.selectDifferent')} onclick={changeSelection} />
+			<BackLink
+				href={locationRoute(currentBrowseLocationId())}
+				label={t('location.selectDifferent')}
+				onclick={changeSelection}
+			/>
 		{/if}
 
 		{#if locationNavigator.isLoading}
@@ -521,6 +633,9 @@
 			</div>
 		{:else}
 			<!-- SELECTION STATE -->
+			{#if locationStore.path.length > 0}
+				<BackLink href={parentLocationRoute()} label={t('common.back')} />
+			{/if}
 
 			<!-- Search box with elevated style and QR scan button -->
 			<div class="mb-4 flex gap-2">
@@ -618,7 +733,7 @@
 						<button
 							type="button"
 							class="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-							onclick={() => goto('/location')}
+							onclick={() => goto(locationHref(null))}
 						>
 							<Home size={16} strokeWidth={1.5} />
 							<span>{t('location.all')}</span>
@@ -630,7 +745,7 @@
 							<button
 								type="button"
 								class="whitespace-nowrap rounded-lg px-2 py-1 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-								onclick={() => goto(`/location?loc=${pathItem.id}`)}
+								onclick={() => goto(locationHref(pathItem.id))}
 							>
 								{pathItem.name}
 							</button>
@@ -696,7 +811,7 @@
 								.path.length > 0
 								? 'ml-2'
 								: ''}"
-							onclick={() => goto(`/location?loc=${location.id}`)}
+							onclick={() => goto(locationHref(location.id))}
 						>
 							<div
 								class="rounded-lg bg-neutral-800 p-2.5 transition-colors group-hover:bg-primary-500/20"
@@ -754,9 +869,11 @@
 							variant="secondary"
 							full
 							onclick={() => {
-								// Save navigation path so we can restore it when coming back
-								sessionStorage.setItem('locationNavPath', JSON.stringify(locationStore.path));
-								goto(`/items?location_id=${locationStore.path[locationStore.path.length - 1].id}`);
+								const locationId = locationStore.path[locationStore.path.length - 1].id;
+								const returnTo = locationHref(locationId);
+								goto(
+									`${resolve('/items')}?location_id=${locationId}&return_to=${encodeURIComponent(returnTo)}`
+								);
 							}}
 						>
 							<List size={20} strokeWidth={1.5} />

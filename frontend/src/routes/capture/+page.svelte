@@ -119,6 +119,7 @@
 	let showAnalyzingUI = $derived(
 		isAnalyzing || (status === 'reviewing' && !analysisAnimationComplete)
 	);
+	let isCaptureLocked = $derived(isAnalyzing || isStartingAnalysis);
 
 	// Cleanup orphaned Object URLs when workflow is reset (images array becomes empty)
 	// This handles cases like workflow.startNew() or workflow.reset()
@@ -136,8 +137,26 @@
 		previousImageCount = currentCount;
 	});
 
+	// Keep workflow transitions visible in the frontend log export. This is
+	// intentionally metadata-only; image bytes and user-entered instructions are
+	// never written to the log.
+	let previousStatus: typeof status | null = null;
+	let previousTotalImageCount = -1;
+	$effect(() => {
+		if (previousStatus !== status || previousTotalImageCount !== totalImageCount) {
+			log.info(
+				`Workflow snapshot: status=${status}, primaryImages=${images.length}, totalImages=${totalImageCount}, location=${workflow.state.locationId ?? 'none'}`
+			);
+			previousStatus = status;
+			previousTotalImageCount = totalImageCount;
+		}
+	});
+
 	// Apply route guard: requires auth, location, and not in reviewing state
 	onMount(async () => {
+		log.info(
+			`Capture mounted: status=${workflow.state.status}, images=${workflow.state.images.length}, location=${workflow.state.locationId ?? 'none'}`
+		);
 		// Wait for auth initialization to complete to avoid race conditions
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
@@ -147,13 +166,21 @@
 		// capture="environment" causing a full page reload), which recreates the
 		// ScanWorkflow singleton with default state (locationId = null).
 		if (!workflow.state.locationId) {
+			log.debug('Capture mounted without location, attempting session recovery');
 			const recovered = await scanWorkflow.recover();
 			if (recovered) {
-				log.info('Session recovered on capture page');
+				log.info(
+					`Session recovered on capture page: status=${workflow.state.status}, images=${workflow.state.images.length}`
+				);
 			}
 		}
 
-		if (!routeGuards.capture()) return;
+		if (!routeGuards.capture()) {
+			log.warn(
+				`Capture route blocked: status=${workflow.state.status}, location=${workflow.state.locationId ?? 'none'}`
+			);
+			return;
+		}
 
 		// Load capture limits from config
 		try {
@@ -169,6 +196,9 @@
 			log.info('Workflow complete, resetting for new scan session');
 			workflow.startNew();
 		}
+		log.info(
+			`Capture ready: status=${workflow.state.status}, images=${workflow.state.images.length}, maxImages=${maxImages}`
+		);
 	});
 
 	// Watch for workflow errors
@@ -181,12 +211,16 @@
 
 	// Handle analysis animation completion - navigate directly to avoid CaptureButtons appearing
 	function handleAnalysisComplete() {
+		log.info(
+			`Analysis animation complete: status=${workflow.state.status}, images=${images.length}`
+		);
 		analysisAnimationComplete = true;
 		// Clear progress after animation finishes
 		workflow.clearAnalysisProgress();
 
 		// Navigate immediately to prevent UI shift from buttons reappearing
 		if (workflow.state.status === 'reviewing') {
+			log.info('Navigating from capture to review after analysis animation');
 			goto(resolve('/review'));
 		}
 	}
@@ -210,6 +244,12 @@
 	function handleFileSelect(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files) return;
+		if (isCaptureLocked) {
+			log.warn('Ignoring file selection while analysis is starting or running');
+			input.value = '';
+			return;
+		}
+		log.info(`File input selected ${input.files.length} file(s), currentTotal=${totalImageCount}`);
 
 		// Track count locally for limit enforcement
 		let currentCount = totalImageCount;
@@ -240,11 +280,20 @@
 		}
 
 		input.value = '';
+		log.info(`File input handled: totalImages=${totalImageCount}`);
 	}
 
 	function handleAdditionalImageSelect(imageIndex: number, e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files) return;
+		if (isCaptureLocked) {
+			log.warn('Ignoring additional file selection while analysis is starting or running');
+			input.value = '';
+			return;
+		}
+		log.info(
+			`Additional file input selected ${input.files.length} file(s) for image=${imageIndex}, currentTotal=${totalImageCount}`
+		);
 
 		const newFiles: File[] = [];
 		const newPreviewUrls: string[] = [];
@@ -273,10 +322,12 @@
 		}
 
 		input.value = '';
+		log.info(`Additional file input handled: totalImages=${totalImageCount}`);
 	}
 
 	/** Handle paste event on the description input to add images from clipboard */
 	function handlePaste(imageIndex: number, e: ClipboardEvent) {
+		if (isCaptureLocked) return;
 		const clipboardData = e.clipboardData;
 		if (!clipboardData) return;
 
@@ -384,6 +435,7 @@
 	}
 
 	function goBack() {
+		log.info(`Capture back navigation: clearing location with ${images.length} image(s)`);
 		resetLocationState();
 		workflow.clearLocation();
 		goto(resolve('/location'));
@@ -418,7 +470,9 @@
 			log.debug('Auth check passed');
 
 			// Before workflow call
-			log.info(`Starting workflow analysis for ${workflow.state.images.length} image(s)`);
+			log.info(
+				`Starting workflow analysis for ${workflow.state.images.length} image(s), totalImages=${totalImageCount}`
+			);
 			analysisAnimationComplete = false;
 			// Collapse all expanded cards when analysis starts
 			expandedImages.clear();
@@ -427,17 +481,23 @@
 				window.scrollTo({ top: 0, behavior: 'smooth' });
 			}, 100);
 			await workflow.startAnalysis();
-			log.debug('Workflow.startAnalysis() completed');
+			log.info(
+				`Workflow.startAnalysis() completed: status=${workflow.state.status}, images=${workflow.state.images.length}, error=${workflow.state.error ?? 'none'}`
+			);
 		} catch (error) {
 			// Error logging
 			log.error('Analysis failed with exception', error);
 			throw error;
 		} finally {
 			isStartingAnalysis = false;
+			log.debug(
+				`Analysis button flow finished: status=${workflow.state.status}, images=${workflow.state.images.length}`
+			);
 		}
 	}
 
 	function cancelAnalysis() {
+		log.info(`Cancel analysis clicked: status=${workflow.state.status}, images=${images.length}`);
 		workflow.cancelAnalysis();
 		// Reset the starting flag in case cancel happened during startup
 		isStartingAnalysis = false;
@@ -463,7 +523,7 @@
 				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 text-neutral-400 transition-colors hover:bg-primary-500/20 hover:text-neutral-200"
 				aria-label={t('capture.changeLocation')}
 				onclick={goBack}
-				disabled={isAnalyzing}
+				disabled={isCaptureLocked}
 			>
 				<ChevronLeft size={24} strokeWidth={2} />
 			</button>
@@ -586,7 +646,7 @@
 	{#if images.length > 0}
 		<div class="mb-4 space-y-3">
 			<!-- Add more images buttons (above image cards) -->
-			{#if totalImageCount < maxImages && !showAnalyzingUI}
+			{#if totalImageCount < maxImages && !showAnalyzingUI && !isStartingAnalysis}
 				<div class="flex gap-3">
 					<button
 						type="button"
@@ -678,7 +738,7 @@
 										? t('capture.collapseOptions')
 										: t('capture.expandOptions')}
 									onclick={() => toggleImageExpanded(index)}
-									disabled={isAnalyzing}
+									disabled={isCaptureLocked}
 								>
 									<ChevronDown
 										class="transition-transform duration-200 {expandedImages.has(index)
@@ -693,7 +753,7 @@
 									class="hover:text-error-400 min-h-touch min-w-touch rounded-lg p-2 text-neutral-400 transition-colors hover:bg-error-500/10"
 									aria-label={t('capture.removeImage')}
 									onclick={() => removeImage(index)}
-									disabled={isAnalyzing}
+									disabled={isCaptureLocked}
 								>
 									<X size={20} strokeWidth={1.5} />
 								</button>
@@ -720,7 +780,7 @@
 												(e.target as HTMLInputElement).checked
 											)}
 										class="peer sr-only"
-										disabled={isAnalyzing}
+										disabled={isCaptureLocked}
 									/>
 									<div
 										class="h-6 w-10 rounded-full bg-neutral-700 transition-colors peer-checked:bg-primary-600"
@@ -743,7 +803,7 @@
 									</div>
 									<AssetIdInput
 										value={image.assetId ?? null}
-										disabled={isAnalyzing}
+										disabled={isCaptureLocked}
 										onChange={(value) => updateImageOption(index, 'assetId', value)}
 										showLabel={false}
 									/>
@@ -770,7 +830,7 @@
 										)}
 									onpaste={(e) => handlePaste(index, e)}
 									class="input flex-1 text-body-sm"
-									disabled={isAnalyzing}
+									disabled={isCaptureLocked}
 								/>
 							</div>
 
@@ -808,7 +868,7 @@
 										type="button"
 										class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 px-3 py-2.5 transition-all hover:border-primary-500/50 hover:bg-primary-500/5"
 										onclick={() => additionalCameraInputs[index]?.click()}
-										disabled={isAnalyzing}
+										disabled={isCaptureLocked}
 									>
 										<Camera class="text-neutral-400" size={16} strokeWidth={1.5} />
 										<span class="text-caption font-medium text-neutral-400"
@@ -819,7 +879,7 @@
 										type="button"
 										class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 px-3 py-2.5 transition-all hover:border-primary-500/50 hover:bg-primary-500/5"
 										onclick={() => additionalImageInputs[index]?.click()}
-										disabled={isAnalyzing}
+										disabled={isCaptureLocked}
 									>
 										<Upload class="text-neutral-400" size={16} strokeWidth={1.5} />
 										<span class="text-caption font-medium text-neutral-400"
@@ -855,7 +915,7 @@
 													class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 opacity-0 transition-all hover:bg-error-600 group-hover:opacity-100"
 													aria-label={t('capture.removeItemAdditional')}
 													onclick={() => removeAdditionalImage(index, additionalIndex)}
-													disabled={isAnalyzing}
+													disabled={isCaptureLocked}
 												>
 													<X class="text-white" size={14} strokeWidth={2.5} />
 												</button>

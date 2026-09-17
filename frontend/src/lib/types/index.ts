@@ -48,6 +48,7 @@ export interface ItemSummary {
 	name: string;
 	quantity: number;
 	thumbnailId?: string | null;
+	createdAt?: string | null;
 }
 
 /** Item for the filtered list page (includes tags and location) */
@@ -71,6 +72,7 @@ export interface ItemDetail {
 	description: string;
 	quantity: number;
 	thumbnailId?: string | null;
+	createdAt?: string | null;
 	assetId?: string | null;
 	manufacturer?: string | null;
 	modelNumber?: string | null;

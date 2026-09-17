@@ -347,6 +347,7 @@ export default {
 	'itemDetail.purchaseFrom': '购买来源',
 	'itemDetail.notes': '备注',
 	'itemDetail.insured': '已投保',
+	'itemDetail.createdTime': '录入时间',
 
 	// ── AI 纠正面板 ──────────────────────────────────────────────────
 	'aiCorrection.title': 'AI 纠正',

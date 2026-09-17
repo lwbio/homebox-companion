@@ -14,13 +14,14 @@
 		FileText,
 		ShieldCheck,
 		ArrowLeft,
+		CalendarClock,
 	} from 'lucide-svelte';
 	import { items as itemsApi, type BlobUrlResult } from '$lib/api';
 	import type { ItemDetail } from '$lib/types';
 	import { routeGuards } from '$lib/utils/routeGuard';
 	import { getInitPromise } from '$lib/services/tokenRefresh';
 	import Loader from '$lib/components/Loader.svelte';
-	import { t } from '$lib/i18n/reactive.svelte';
+	import { getLocale, t } from '$lib/i18n/reactive.svelte';
 
 	let item = $state<ItemDetail | null>(null);
 	let isLoading = $state(true);
@@ -28,6 +29,20 @@
 	let thumbnailResult = $state<BlobUrlResult | null>(null);
 
 	const itemId = $derived(page.params.id);
+	const dateTimeFormatter = $derived(
+		new Intl.DateTimeFormat(getLocale() === 'zh' ? 'zh-CN' : 'en-US', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+		})
+	);
+	const createdTime = $derived.by(() => {
+		if (!item?.createdAt) return null;
+		const date = new Date(item.createdAt);
+		return Number.isNaN(date.getTime()) ? null : dateTimeFormatter.format(date);
+	});
 
 	const hasExtendedFields = $derived(
 		item &&
@@ -253,6 +268,21 @@
 								<span class="text-success-400 text-body-sm">{t('itemDetail.insured')}</span>
 							</div>
 						{/if}
+					</div>
+				{/if}
+
+				{#if createdTime}
+					<div class="flex items-center gap-3 border-t border-neutral-700 pt-4">
+						<CalendarClock size={16} strokeWidth={1.5} class="shrink-0 text-neutral-500" />
+						<div>
+							<span class="text-caption text-neutral-500">{t('itemDetail.createdTime')}</span>
+							<time
+								datetime={item.createdAt ?? undefined}
+								class="block text-body-sm text-neutral-200"
+							>
+								{createdTime}
+							</time>
+						</div>
 					</div>
 				{/if}
 			</div>

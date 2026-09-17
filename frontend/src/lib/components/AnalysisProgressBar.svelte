@@ -14,6 +14,8 @@
 	// Internal state for animated progress
 	let displayProgress = $state(0);
 	let animationInterval: number | null = null;
+	let finalAnimationInterval: number | null = null;
+	let completionTimeout: number | null = null;
 	let hasCalledComplete = $state(false);
 	let isComplete = $state(false);
 
@@ -61,6 +63,17 @@
 		}
 	}
 
+	function stopCompletionAnimation() {
+		if (finalAnimationInterval !== null) {
+			clearInterval(finalAnimationInterval);
+			finalAnimationInterval = null;
+		}
+		if (completionTimeout !== null) {
+			clearTimeout(completionTimeout);
+			completionTimeout = null;
+		}
+	}
+
 	// Watch for changes in current to snap to milestone
 	$effect(() => {
 		// When current changes, immediately snap to the milestone
@@ -71,6 +84,7 @@
 
 		// Start animating toward the next target if not complete
 		if (current < total) {
+			stopCompletionAnimation();
 			hasCalledComplete = false;
 			isComplete = false;
 			startAnimation();
@@ -79,17 +93,22 @@
 			stopAnimation();
 
 			// Smoothly animate to 100%
-			const finalAnimationInterval = window.setInterval(() => {
+			stopCompletionAnimation();
+			finalAnimationInterval = window.setInterval(() => {
 				if (displayProgress >= 99.9) {
 					displayProgress = 100;
-					clearInterval(finalAnimationInterval);
+					if (finalAnimationInterval !== null) {
+						clearInterval(finalAnimationInterval);
+						finalAnimationInterval = null;
+					}
 
 					// Trigger completion effect
 					isComplete = true;
 
 					// Wait for the pop animation + brief hold before signaling completion
 					if (!hasCalledComplete && onComplete) {
-						setTimeout(() => {
+						completionTimeout = window.setTimeout(() => {
+							completionTimeout = null;
 							hasCalledComplete = true;
 							onComplete();
 						}, 600); // 300ms pop + 300ms hold
@@ -106,6 +125,7 @@
 	// Cleanup on unmount
 	onDestroy(() => {
 		stopAnimation();
+		stopCompletionAnimation();
 	});
 </script>
 

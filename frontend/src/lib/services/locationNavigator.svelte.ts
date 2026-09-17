@@ -18,6 +18,7 @@ import { createLogger } from '$lib/utils/logger';
 import type { Location } from '$lib/types';
 
 const log = createLogger({ prefix: 'LocationNavigator' });
+type NavigationResult = 'success' | 'not-found' | 'failed' | 'stale';
 
 // =============================================================================
 // LOCATION NAVIGATOR CLASS
@@ -33,6 +34,9 @@ class LocationNavigator {
 
 	/** Currently navigated location (the location we're viewing children of) */
 	private _currentLocation = $state<Location | null>(null);
+
+	/** Latest URL-driven navigation request; older responses must not overwrite it. */
+	private _navigationRequestId = 0;
 
 	// =========================================================================
 	// GETTERS
@@ -50,7 +54,14 @@ class LocationNavigator {
 
 	/** Drop navigation state when the verified Homebox scope changes. */
 	reset(): void {
+		this._navigationRequestId++;
 		this._currentLocation = null;
+		this._isLoading = false;
+	}
+
+	/** Invalidate an older URL request when cached state already satisfies a newer URL. */
+	cancelPendingNavigation(): void {
+		this._navigationRequestId++;
 		this._isLoading = false;
 	}
 
@@ -168,10 +179,29 @@ class LocationNavigator {
 	 *
 	 * @param locId - The parent location ID to browse, or null for the root level.
 	 */
-	async navigateToId(locId: string | null): Promise<void> {
+	async navigateToId(locId: string | null): Promise<NavigationResult> {
+		const requestId = ++this._navigationRequestId;
+
 		if (!locId) {
-			await this.loadTree();
-			return;
+			this._isLoading = true;
+			try {
+				const tree = await locationsApi.tree();
+				if (requestId !== this._navigationRequestId) return 'stale';
+				locationStore.setTree(tree);
+				locationStore.setFlatList(tree);
+				locationStore.setPath([]);
+				locationStore.setCurrentLevel(tree);
+				this._currentLocation = null;
+				return 'success';
+			} catch (error) {
+				if (requestId === this._navigationRequestId) {
+					log.error('Failed to load locations', error);
+					showToast(t('location.refreshFailed'), 'error');
+				}
+				return 'failed';
+			} finally {
+				if (requestId === this._navigationRequestId) this._isLoading = false;
+			}
 		}
 
 		this._isLoading = true;
@@ -180,19 +210,31 @@ class LocationNavigator {
 			let tree = locationStore.tree;
 			if (tree.length === 0) {
 				tree = await locationsApi.tree();
+				if (requestId !== this._navigationRequestId) return 'stale';
 				locationStore.setTree(tree);
 				locationStore.setFlatList(tree);
 			}
 
-			const path = this.findPathInTree(tree, locId);
+			let path = this.findPathInTree(tree, locId);
 			if (!path) {
-				// Location no longer exists (deleted/renamed) — fall back to root.
-				log.warn(`Location ${locId} not found in tree, falling back to root`);
-				await this.loadTree();
-				return;
+				// The cached tree may be stale (for example, immediately after a QR
+				// scan for a location created by another client). Refresh once.
+				tree = await locationsApi.tree();
+				if (requestId !== this._navigationRequestId) return 'stale';
+				locationStore.setTree(tree);
+				locationStore.setFlatList(tree);
+				path = this.findPathInTree(tree, locId);
+				if (!path) {
+					log.warn(`Location ${locId} not found in tree, falling back to root`);
+					locationStore.setPath([]);
+					locationStore.setCurrentLevel(tree);
+					this._currentLocation = null;
+					return 'not-found';
+				}
 			}
 
 			const details = await locationsApi.get(locId);
+			if (requestId !== this._navigationRequestId) return 'stale';
 			locationStore.setPath(path);
 			locationStore.setCurrentLevel(details.children || []);
 			this._currentLocation = {
@@ -202,11 +244,15 @@ class LocationNavigator {
 				itemCount: details.itemCount ?? 0,
 				children: details.children || [],
 			};
+			return 'success';
 		} catch (error) {
-			log.error('Failed to navigate to location', error);
-			showToast(t('location.detailsFailed'), 'error');
+			if (requestId === this._navigationRequestId) {
+				log.error('Failed to navigate to location', error);
+				showToast(t('location.detailsFailed'), 'error');
+			}
+			return 'failed';
 		} finally {
-			this._isLoading = false;
+			if (requestId === this._navigationRequestId) this._isLoading = false;
 		}
 	}
 
@@ -246,58 +292,10 @@ class LocationNavigator {
 		scanWorkflow.setLocation(location.id, location.name, pathStr);
 	}
 
-	/**
-	 * Clear the current selection and restore navigation state.
-	 * Optionally accepts the previous path to restore navigation context.
-	 */
-	async clearSelection(): Promise<void> {
-		const previousPath = [...locationStore.path];
+	/** Clear the selected location; URL navigation restores the browse level. */
+	clearSelectedLocation(): void {
 		locationStore.setSelected(null);
 		scanWorkflow.clearLocation();
-
-		// If we had a path (user was inside a location), restore it
-		if (previousPath.length > 0) {
-			// Restore the path - user will be brought back to where they were browsing
-			locationStore.setPath(previousPath);
-
-			// Fetch the location details to get current children
-			const lastPathItem = previousPath[previousPath.length - 1];
-			this._isLoading = true;
-			try {
-				const details = await locationsApi.get(lastPathItem.id);
-				locationStore.setCurrentLevel(details.children || []);
-				// Restore the current navigated location
-				this._currentLocation = {
-					id: details.id,
-					name: details.name,
-					description: details.description || '',
-					itemCount: details.itemCount ?? 0,
-					children: details.children || [],
-				};
-			} catch (error) {
-				log.error('Failed to load location details', error);
-				showToast(t('location.restoreFailed'), 'error');
-			} finally {
-				this._isLoading = false;
-			}
-		} else {
-			// Was at root level - refresh to show any new locations
-			this._isLoading = true;
-			this._currentLocation = null;
-			try {
-				const tree = await locationsApi.tree();
-				locationStore.setTree(tree);
-				locationStore.setPath([]);
-				locationStore.setCurrentLevel(tree);
-			} catch (error) {
-				log.error('Failed to refresh locations', error);
-				// Fallback to cached tree
-				locationStore.setPath([]);
-				locationStore.setCurrentLevel(locationStore.tree);
-			} finally {
-				this._isLoading = false;
-			}
-		}
 	}
 
 	/**
