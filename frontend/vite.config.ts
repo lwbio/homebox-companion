@@ -23,5 +23,7 @@ export default defineConfig({
 				changeOrigin: true,
 			},
 		},
+		// 允许所有 *.ddnsto.com 的域名访问
+		allowedHosts: ['.ddnsto.com'],
 	},
 });

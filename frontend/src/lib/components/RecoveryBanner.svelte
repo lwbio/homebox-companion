@@ -7,6 +7,7 @@
 	 */
 	import { RefreshCw, ImageIcon, CheckSquare, Play } from 'lucide-svelte';
 	import type { SessionSummary } from '$lib/services/sessionPersistence';
+	import { t } from '$lib/i18n/reactive.svelte';
 	import Button from './Button.svelte';
 
 	interface Props {
@@ -26,21 +27,20 @@
 	function getStatusText(status: string): string {
 		switch (status) {
 			case 'location':
-				return 'selecting a location';
+				return t('recovery.status.location');
 			case 'capturing':
-				return 'capturing photos';
+				return t('recovery.status.capturing');
 			case 'analyzing':
-				return 'analyzing photos';
 			case 'partial_analysis':
-				return 'analyzing photos';
+				return t('recovery.status.analyzing');
 			case 'reviewing':
-				return 'reviewing items';
+				return t('recovery.status.reviewing');
 			case 'confirming':
-				return 'confirming items';
+				return t('recovery.status.confirming');
 			case 'submitting':
-				return 'submitting items';
+				return t('recovery.status.submitting');
 			default:
-				return 'in progress';
+				return t('recovery.status.inProgress');
 		}
 	}
 </script>
@@ -61,13 +61,21 @@
 			</div>
 
 			<div class="flex-1">
-				<h3 class="text-body font-semibold text-primary-100">Session Recovery Available</h3>
+				<h3 class="text-body font-semibold text-primary-100">{t('recovery.heading')}</h3>
 				<p class="mt-1 text-body-sm text-primary-200/80">
-					You were {getStatusText(summary.status)}
 					{#if summary.locationName}
-						at <span class="font-medium text-primary-100">{summary.locationName}</span>
+						{t('recovery.description', {
+							status: getStatusText(summary.status),
+							location: summary.locationName,
+							age: summary.ageText,
+						})}
+					{:else}
+						{t('recovery.description', {
+							status: getStatusText(summary.status),
+							location: '',
+							age: summary.ageText,
+						}).replace(' at ', ' ')}
 					{/if}
-					{summary.ageText}.
 				</p>
 			</div>
 		</div>
@@ -77,15 +85,13 @@
 			{#if summary.imageCount > 0}
 				<div class="flex items-center gap-1.5">
 					<ImageIcon size={14} strokeWidth={1.5} />
-					<span>{summary.imageCount} photo{summary.imageCount !== 1 ? 's' : ''}</span>
+					<span>{t('recovery.photos', { count: summary.imageCount })}</span>
 				</div>
 			{/if}
 			{#if summary.confirmedCount > 0}
 				<div class="flex items-center gap-1.5">
 					<CheckSquare size={14} strokeWidth={1.5} />
-					<span
-						>{summary.confirmedCount} item{summary.confirmedCount !== 1 ? 's' : ''} confirmed</span
-					>
+					<span>{t('recovery.itemsConfirmed', { count: summary.confirmedCount })}</span>
 				</div>
 			{/if}
 		</div>
@@ -96,14 +102,14 @@
 					<div
 						class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
 					></div>
-					<span>Recovering...</span>
+					<span>{t('recovery.recovering')}</span>
 				{:else}
 					<Play size={16} strokeWidth={1.5} />
-					<span>Resume Session</span>
+					<span>{t('recovery.resumeSession')}</span>
 				{/if}
 			</Button>
 			<Button variant="ghost" onclick={onDismiss} disabled={loading}>
-				<span>Start Fresh</span>
+				<span>{t('recovery.startFresh')}</span>
 			</Button>
 		</div>
 	</div>

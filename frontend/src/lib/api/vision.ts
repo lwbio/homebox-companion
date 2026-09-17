@@ -3,7 +3,8 @@
  */
 
 import { request, requestFormData } from './client';
-import { getIsDemoMode, fieldPreferences } from './settings';
+import { getIsDemoMode, fieldPreferences, getClientSideImageCompression } from './settings';
+import { compressImageForVision, compressImagesForVision } from '../utils/image';
 import { apiLogger as log } from '../utils/logger';
 import type {
 	DetectionResponse,
@@ -19,6 +20,7 @@ export interface DetectOptions {
 	extractExtendedFields?: boolean;
 	additionalImages?: File[];
 	signal?: AbortSignal;
+	sessionId?: string;
 }
 
 export interface AnalyzeOptions {
@@ -57,6 +59,26 @@ async function buildVisionHeaders(): Promise<Record<string, string>> {
 
 export const vision = {
 	/**
+	 * Cancel active vision detection tasks for a specific session on the backend.
+	 * Called when the user clicks "Cancel Analysis".
+	 */
+	cancel: async (sessionId: string): Promise<void> => {
+		try {
+			await request<{ cancelled: number; message: string }>(
+				`/tools/vision/cancel?session_id=${encodeURIComponent(sessionId)}`,
+				{
+					method: 'POST',
+				}
+			);
+			log.info(`Backend vision tasks cancelled for session ${sessionId}`);
+		} catch (error) {
+			// Non-fatal — the frontend already aborted its fetch requests.
+			// This is best-effort to stop the backend LLM call.
+			log.warn('Failed to cancel backend vision tasks:', error);
+		}
+	},
+
+	/**
 	 * Detect items from a single image
 	 */
 	detect: async (image: File, options: DetectOptions = {}): Promise<DetectionResponse> => {
@@ -66,7 +88,12 @@ export const vision = {
 		);
 
 		const formData = new FormData();
-		formData.append('image', image);
+		const clientCompress = getClientSideImageCompression();
+		const uploadImage = clientCompress ? await compressImageForVision(image) : image;
+		const uploadAdditional = clientCompress
+			? await compressImagesForVision(options.additionalImages ?? [])
+			: (options.additionalImages ?? []);
+		formData.append('image', uploadImage);
 
 		if (options.singleItem !== undefined) {
 			formData.append('single_item', String(options.singleItem));
@@ -81,9 +108,12 @@ export const vision = {
 			formData.append('extract_extended_fields', String(options.extractExtendedFields));
 		}
 		if (options.additionalImages) {
-			for (const img of options.additionalImages) {
+			for (const img of uploadAdditional) {
 				formData.append('additional_images', img);
 			}
+		}
+		if (options.sessionId) {
+			formData.append('session_id', options.sessionId);
 		}
 
 		const headers = await buildVisionHeaders();
@@ -106,8 +136,10 @@ export const vision = {
 	): Promise<AdvancedItemDetails> => {
 		log.debug(`Preparing analysis request: item="${itemName}", images=${images.length}`);
 
+		const clientCompress = getClientSideImageCompression();
+		const uploadImages = clientCompress ? await compressImagesForVision(images) : images;
 		const formData = new FormData();
-		for (const img of images) {
+		for (const img of uploadImages) {
 			formData.append('images', img);
 		}
 		formData.append('item_name', itemName);
@@ -158,7 +190,9 @@ export const vision = {
 		);
 
 		const formData = new FormData();
-		formData.append('image', image);
+		const clientCompress = getClientSideImageCompression();
+		const uploadImage = clientCompress ? await compressImageForVision(image) : image;
+		formData.append('image', uploadImage);
 		formData.append('current_item', JSON.stringify(currentItem));
 		formData.append('correction_instructions', correctionInstructions);
 

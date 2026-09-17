@@ -80,6 +80,7 @@ export default {
 	'location.insideFolder': '在 {name} 内',
 	'location.createIn': '在 {name} 中创建位置',
 	'location.createNew': '创建新位置',
+	'location.viewItems': '查看 {name} 中的物品',
 	'location.error.selectRequired': '请选择一个位置',
 	'location.error.invalidQr': '无效的二维码，不是 Homebox 位置。',
 	'location.error.notFound': '在你的 Homebox 中未找到该位置。',

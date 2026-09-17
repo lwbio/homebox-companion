@@ -19,6 +19,7 @@ class ConfigResponse(BaseModel):
     llm_model: str
     update_check_enabled: bool
     image_quality: str
+    client_side_image_compression: bool
     log_level: str
     capture_max_images: int
     capture_max_file_size_mb: int
@@ -42,6 +43,7 @@ async def get_config(request: Request) -> ConfigResponse:
         llm_model=app_settings.effective_llm_model,
         update_check_enabled=not app_settings.disable_update_check,
         image_quality=app_settings.image_quality.value,
+        client_side_image_compression=app_settings.client_side_image_compression,
         log_level=app_settings.log_level,
         capture_max_images=app_settings.capture_max_images,
         capture_max_file_size_mb=app_settings.capture_max_file_size_mb,

@@ -31,6 +31,7 @@ async def detect_items_from_bytes(
     field_preferences: dict[str, str] | None = None,
     output_language: str | None = None,
     custom_fields: list[CustomFieldDefinition] | None = None,
+    optimize_images: bool = True,
 ) -> list[DetectedItem]:
     """Use LLM vision model to detect items from raw image bytes.
 
@@ -46,17 +47,18 @@ async def detect_items_from_bytes(
         field_preferences: Optional dict of field customization instructions.
         output_language: Target language for AI output (default: English).
         custom_fields: Optional list of custom field definitions.
+        optimize_images: Whether to resize and recompress images before sending to the LLM.
 
     Returns:
         List of detected items with quantities, descriptions, and optionally
         extended fields when extract_extended_fields is True.
     """
     # Build list of all image data URIs
-    image_data_uris = [encode_image_bytes_to_data_uri(image_bytes, mime_type)]
+    image_data_uris = [encode_image_bytes_to_data_uri(image_bytes, mime_type, optimize=optimize_images)]
 
     if additional_images:
         for add_bytes, add_mime in additional_images:
-            image_data_uris.append(encode_image_bytes_to_data_uri(add_bytes, add_mime))
+            image_data_uris.append(encode_image_bytes_to_data_uri(add_bytes, add_mime, optimize=optimize_images))
 
     return await _detect_items_from_data_uris(
         image_data_uris,

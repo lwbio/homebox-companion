@@ -10,7 +10,7 @@
  * Uses Svelte 5 runes for fine-grained reactivity.
  */
 import { locations as locationsApi } from '$lib/api';
-import { locationStore } from '$lib/stores/locations.svelte';
+import { locationStore, type PathItem } from '$lib/stores/locations.svelte';
 import { scanWorkflow } from '$lib/workflows/scan.svelte';
 import { showToast } from '$lib/stores/ui.svelte';
 import { t } from '$lib/i18n';
@@ -70,6 +70,7 @@ class LocationNavigator {
 			const tree = await locationsApi.tree();
 			log.debug('Loaded location tree, top-level count:', tree.length);
 			locationStore.setTree(tree);
+			locationStore.setPath([]);
 			locationStore.setCurrentLevel(tree);
 
 			// Build flat list for search from the tree (preserves hierarchy for disambiguation)
@@ -159,18 +160,41 @@ class LocationNavigator {
 	// =========================================================================
 
 	/**
-	 * Navigate into a location, showing its children.
+	 * Navigate to a parent location by ID, driving the location tree from the URL.
+	 *
+	 * The location page reflects the current tree position in the URL as
+	 * `?loc=<parent-id>` so that the browser back button returns to the
+	 * previous level instead of leaving the scan flow entirely.
+	 *
+	 * @param locId - The parent location ID to browse, or null for the root level.
 	 */
-	async navigateInto(location: Location): Promise<void> {
-		log.debug('Navigating into location:', location.name, location.id);
+	async navigateToId(locId: string | null): Promise<void> {
+		if (!locId) {
+			await this.loadTree();
+			return;
+		}
+
 		this._isLoading = true;
 		try {
-			const details = await locationsApi.get(location.id);
-			log.debug('Loaded location details, children:', details.children?.length ?? 0);
-			// Use API-fresh name in case the location was renamed
-			locationStore.pushPath({ id: details.id, name: details.name });
+			// Ensure the tree is loaded so we can resolve the full breadcrumb path.
+			let tree = locationStore.tree;
+			if (tree.length === 0) {
+				tree = await locationsApi.tree();
+				locationStore.setTree(tree);
+				locationStore.setFlatList(tree);
+			}
+
+			const path = this.findPathInTree(tree, locId);
+			if (!path) {
+				// Location no longer exists (deleted/renamed) — fall back to root.
+				log.warn(`Location ${locId} not found in tree, falling back to root`);
+				await this.loadTree();
+				return;
+			}
+
+			const details = await locationsApi.get(locId);
+			locationStore.setPath(path);
 			locationStore.setCurrentLevel(details.children || []);
-			// Store the current location with all its data including itemCount
 			this._currentLocation = {
 				id: details.id,
 				name: details.name,
@@ -179,75 +203,33 @@ class LocationNavigator {
 				children: details.children || [],
 			};
 		} catch (error) {
-			log.error('Failed to load location details', error);
+			log.error('Failed to navigate to location', error);
 			showToast(t('location.detailsFailed'), 'error');
-			// Fallback to using existing children data
-			locationStore.pushPath({ id: location.id, name: location.name });
-			locationStore.setCurrentLevel(location.children || []);
-			this._currentLocation = location;
 		} finally {
 			this._isLoading = false;
 		}
 	}
 
 	/**
-	 * Navigate to a specific path index (breadcrumb navigation).
-	 * Index -1 navigates to root.
+	 * Find the breadcrumb path (ancestor chain, inclusive of the target) for a
+	 * location ID within a location tree.
 	 */
-	async navigateToPath(index: number): Promise<void> {
-		if (index === -1) {
-			// Navigate back to root - refresh tree to ensure it's current
-			this._isLoading = true;
-			this._currentLocation = null;
-			try {
-				const tree = await locationsApi.tree();
-				locationStore.setTree(tree);
-				locationStore.setPath([]);
-				locationStore.setCurrentLevel(tree);
-			} catch (error) {
-				log.error('Failed to refresh root locations', error);
-				showToast(t('location.loadFailed'), 'error');
-				// Fallback to cached tree
-				locationStore.setPath([]);
-				locationStore.setCurrentLevel(locationStore.tree);
-			} finally {
-				this._isLoading = false;
+	private findPathInTree(
+		tree: Location[],
+		targetId: string,
+		trail: PathItem[] = []
+	): PathItem[] | null {
+		for (const node of tree) {
+			const current = [...trail, { id: node.id, name: node.name }];
+			if (node.id === targetId) {
+				return current;
 			}
-		} else {
-			// Save current state before making changes (for error recovery)
-			const previousPath = [...locationStore.path];
-			const previousCurrentLevel = [...locationStore.currentLevel];
-			const previousCurrentLocation = this._currentLocation;
-
-			// Slice path to target index
-			locationStore.slicePath(index);
-			const newPath = locationStore.path;
-
-			// Fetch fresh details for the target location to ensure children are up-to-date
-			const targetId = newPath[newPath.length - 1].id;
-			this._isLoading = true;
-			try {
-				const details = await locationsApi.get(targetId);
-				locationStore.setCurrentLevel(details.children || []);
-				// Store the navigated location
-				this._currentLocation = {
-					id: details.id,
-					name: details.name,
-					description: details.description || '',
-					itemCount: details.itemCount ?? 0,
-					children: details.children || [],
-				};
-			} catch (error) {
-				log.error('Failed to load location details', error);
-				showToast(t('location.navigateBackFailed'), 'error');
-				// Restore previous state on error to avoid inconsistent UI
-				locationStore.setPath(previousPath);
-				locationStore.setCurrentLevel(previousCurrentLevel);
-				this._currentLocation = previousCurrentLocation;
-			} finally {
-				this._isLoading = false;
+			if (node.children && node.children.length > 0) {
+				const found = this.findPathInTree(node.children, targetId, current);
+				if (found) return found;
 			}
 		}
+		return null;
 	}
 
 	// =========================================================================

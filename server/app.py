@@ -250,6 +250,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Homebox Companion API")
     logger.info(f"Version: {__version__}")
     logger.info(f"Homebox URL (HBC_HOMEBOX_URL): {app_settings.homebox_url}")
+    logger.info(f"Companion base URL (HBC_COMPANION_BASE_URL): {app_settings.companion_base_url}")
     logger.info(f"Full API endpoint: {app_settings.api_url}")
     logger.info(f"LLM Model: {app_settings.effective_llm_model}")
     logger.info(f"Log level: {app_settings.log_level}")

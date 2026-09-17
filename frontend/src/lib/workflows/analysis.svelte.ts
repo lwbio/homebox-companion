@@ -11,6 +11,7 @@
 import { vision, fieldPreferences } from '$lib/api/index';
 import { tagStore } from '$lib/stores/tags.svelte';
 import { workflowLogger as log } from '$lib/utils/logger';
+import { createUuid } from '$lib/utils/uuid';
 import type { CapturedImage, ReviewItem, Progress, ImageAnalysisStatus } from '$lib/types';
 
 // =============================================================================
@@ -88,6 +89,9 @@ export class AnalysisService {
 	/** Abort controller for cancellable operations */
 	private abortController: AbortController | null = null;
 
+	/** Session ID for backend task cancellation — scoped per analyze() call */
+	private sessionId: string | null = null;
+
 	/** Cache for default tag (loaded once per session) */
 	private defaultTagId: string | null = null;
 	private defaultTagLoaded = false;
@@ -156,6 +160,7 @@ export class AnalysisService {
 						extractExtendedFields: true,
 						additionalImages: image.additionalFiles,
 						signal,
+						sessionId: this.sessionId ?? undefined,
 					});
 
 					log.debug(
@@ -326,6 +331,7 @@ export class AnalysisService {
 
 		// Initialize analysis state
 		this.abortController = new AbortController();
+		this.sessionId = createUuid();
 		this.progress = {
 			current: 0,
 			total: images.length,
@@ -379,6 +385,10 @@ export class AnalysisService {
 		if (this.abortController) {
 			this.abortController.abort();
 			this.abortController = null;
+		}
+		// Also tell the backend to cancel its LLM call for this session (best-effort)
+		if (this.sessionId) {
+			vision.cancel(this.sessionId).catch(() => {});
 		}
 	}
 
@@ -447,6 +457,7 @@ export class AnalysisService {
 
 		// Initialize analysis state
 		this.abortController = new AbortController();
+		this.sessionId = createUuid();
 		this.progress = {
 			current: 0,
 			total: images.length,

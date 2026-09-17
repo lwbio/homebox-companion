@@ -690,7 +690,7 @@
 								</button>
 								<button
 									type="button"
-									class="hover:text-error-400 rounded-lg p-2 text-neutral-400 transition-colors hover:bg-error-500/10"
+									class="hover:text-error-400 min-h-touch min-w-touch rounded-lg p-2 text-neutral-400 transition-colors hover:bg-error-500/10"
 									aria-label={t('capture.removeImage')}
 									onclick={() => removeImage(index)}
 									disabled={isAnalyzing}

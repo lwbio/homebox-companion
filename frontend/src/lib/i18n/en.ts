@@ -78,6 +78,7 @@ export default {
 	'location.insideFolder': 'Inside {name}',
 	'location.createIn': 'Create Location in {name}',
 	'location.createNew': 'Create New Location',
+	'location.viewItems': 'View items in {name}',
 	'location.error.selectRequired': 'Please select a location',
 	'location.error.invalidQr': 'Invalid QR code. Not a Homebox location.',
 	'location.error.notFound': 'Location not found in your Homebox.',

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from loguru import logger
 
 from homebox_companion import (
@@ -39,6 +42,7 @@ from ...schemas.vision import (
     DuplicateMatchResponse,
 )
 from ...services.duplicate_checker import DuplicateChecker
+from .task_tracker import cancel_session, register, unregister
 
 router = APIRouter()
 
@@ -103,6 +107,17 @@ def filter_default_tag(tag_ids: list[str] | None, default_tag_id: str | None) ->
     return [tid for tid in tag_ids if tid != default_tag_id]
 
 
+@router.post("/cancel")
+async def cancel_vision_tasks(session_id: str) -> dict:
+    """Cancel active vision detection tasks for a specific session.
+
+    Called by the frontend when the user clicks "Cancel Analysis".
+    Only cancels tasks belonging to the given session, not other sessions.
+    """
+    count = cancel_session(session_id)
+    return {"cancelled": count, "message": f"Cancelled {count} task(s) for session {session_id}"}
+
+
 @router.post("/detect", response_model=DetectionResponse)
 async def detect_items(
     image: Annotated[UploadFile, File(description="Primary image file to analyze")],
@@ -114,6 +129,7 @@ async def detect_items(
     additional_images: Annotated[
         list[UploadFile] | None, File(description="Additional images for the same item")
     ] = None,
+    session_id: Annotated[str, Form()] = "",
 ) -> DetectionResponse:
     """Analyze an uploaded image and detect items using LLM vision.
 
@@ -127,6 +143,7 @@ async def detect_items(
         additional_images: Optional additional images for the same item(s).
     """
     additional_count = len(additional_images) if additional_images else 0
+    task_id = uuid.uuid4().hex[:12]
     logger.info(f"Detecting items from image: {image.filename} (+ {additional_count} additional)")
     logger.info(f"Single item mode: {single_item}, Extra instructions: {extra_instructions}")
     logger.info(f"Extract extended fields: {extract_extended_fields}")
@@ -147,7 +164,9 @@ async def detect_items(
 
     logger.debug(f"Loaded {len(ctx.tags)} tags for context")
 
-    # Get image quality settings
+    # When client-side compression is enabled, the uploaded images are already
+    # in the vision format and can be reused for Homebox attachments as-is.
+    client_side_compression = settings.client_side_image_compression
     max_dimension, jpeg_quality = settings.image_quality_params
 
     # Run AI detection and image compression in parallel
@@ -159,8 +178,16 @@ async def detect_items(
             """Compress a single image with concurrency limiting."""
             # Limit concurrent compressions to prevent CPU overload
             async with _get_compression_semaphore():
+                if client_side_compression:
+                    return CompressedImage(
+                        data=base64.b64encode(img_bytes).decode("ascii"),
+                        mime_type=_mime,
+                    )
                 base64_data, mime = await asyncio.to_thread(
-                    encode_compressed_image_to_base64, img_bytes, max_dimension, jpeg_quality
+                    encode_compressed_image_to_base64,
+                    img_bytes,
+                    max_dimension,
+                    jpeg_quality,
                 )
                 return CompressedImage(data=base64_data, mime_type=mime)
 
@@ -170,8 +197,8 @@ async def detect_items(
     # Detect items
     logger.info("Starting LLM vision detection and image compression...")
 
-    # Run detection and compression in parallel
-    detection_task = detect_items_from_bytes(
+    # Wrap detection in a cancellable task so cancel endpoint can interrupt it
+    detection_coro = detect_items_from_bytes(
         image_bytes=image_bytes,
         mime_type=content_type,
         tags=ctx.tags,
@@ -182,10 +209,20 @@ async def detect_items(
         field_preferences=ctx.field_preferences,
         output_language=ctx.output_language,
         custom_fields=ctx.custom_fields,
+        optimize_images=not client_side_compression,
     )
+    detection_task = asyncio.ensure_future(detection_coro)
+    register(session_id, task_id, detection_task)
     compression_task = compress_all_images()
 
-    detected, compressed_images = await asyncio.gather(detection_task, compression_task)
+    try:
+        detected, compressed_images = await asyncio.gather(detection_task, compression_task)
+    except asyncio.CancelledError:
+        logger.info(f"Detection task {task_id} (session={session_id}) was cancelled by client")
+        # Return empty response — client has already disconnected
+        return Response(status_code=499)  # client closed request
+    finally:
+        unregister(session_id, task_id)
 
     logger.info(f"Detected {len(detected)} items, compressed {len(compressed_images)} images")
 
@@ -261,8 +298,10 @@ async def analyze_item_advanced(
 
     # Validate and convert images to data URIs
     validated_images = await validate_files_size(images)
+    optimize_images = not settings.client_side_image_compression
     image_data_uris = [
-        encode_image_bytes_to_data_uri(img_bytes, mime_type) for img_bytes, mime_type in validated_images
+        encode_image_bytes_to_data_uri(img_bytes, mime_type, optimize=optimize_images)
+        for img_bytes, mime_type in validated_images
     ]
 
     # Analyze images
@@ -340,7 +379,9 @@ async def correct_item(
     # Read and validate image size
     image_bytes = await validate_file_size(image)
     content_type = image.content_type or "image/jpeg"
-    image_data_uri = encode_image_bytes_to_data_uri(image_bytes, content_type)
+    image_data_uri = encode_image_bytes_to_data_uri(
+        image_bytes, content_type, optimize=not settings.client_side_image_compression
+    )
 
     logger.debug(f"Loaded {len(ctx.tags)} tags for context")
 

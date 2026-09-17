@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { locations as locationsApi } from '$lib/api';
 	import { ApiError } from '$lib/api/client';
@@ -38,6 +39,7 @@
 		ChevronRight,
 		FolderOpen,
 		Plus,
+		List,
 	} from 'lucide-svelte';
 
 	const log = createLogger({ prefix: 'LocationPage' });
@@ -90,6 +92,28 @@
 		prevSessionExpired = currentExpired;
 	});
 
+	// The location tree position is reflected in the URL as `?loc=<parent-id>` so
+	// the browser back button returns to the previous level instead of leaving the
+	// scan flow. This flag gates the URL-driven effect until the route guard and
+	// one-time setup (recovery / saved path) have completed in onMount.
+	let navigationReady = $state(false);
+	// Plain (non-reactive) variable — only used internally to dedupe URL syncs.
+	let lastHandledLoc: string | null | undefined = undefined;
+
+	// Drive navigation from the URL. Handles the initial load, SPA navigation
+	// (clicking a location/breadcrumb) and browser back/forward.
+	$effect(() => {
+		const locId = page.url.searchParams.get('loc');
+		if (!navigationReady || locId === lastHandledLoc) return;
+		lastHandledLoc = locId;
+		void navigateFromUrl(locId);
+	});
+
+	async function navigateFromUrl(locId: string | null): Promise<void> {
+		await locationNavigator.navigateToId(locId);
+		await fetchTags();
+	}
+
 	// Apply route guard: requires auth, redirects to capture if already in workflow
 	onMount(async () => {
 		// Wait for auth initialization to complete to avoid race conditions
@@ -108,8 +132,29 @@
 			log.warn('Failed to check for recoverable session:', err);
 		}
 
-		await locationNavigator.loadTree();
-		await fetchTags();
+		// Check for saved navigation path (e.g., returning from items list)
+		const savedPathJson = sessionStorage.getItem('locationNavPath');
+		if (savedPathJson) {
+			sessionStorage.removeItem('locationNavPath');
+			try {
+				const savedPath = JSON.parse(savedPathJson) as { id: string; name: string }[];
+				const lastId = savedPath[savedPath.length - 1]?.id;
+				if (lastId) {
+					lastHandledLoc = lastId;
+					navigationReady = true;
+					await goto(`/location?loc=${lastId}`, { replaceState: true });
+					await navigateFromUrl(lastId);
+					return;
+				}
+			} catch (err) {
+				log.warn('Failed to restore navigation path:', err);
+			}
+		}
+
+		// Initial navigation driven by the current URL (null → root tree).
+		lastHandledLoc = page.url.searchParams.get('loc');
+		navigationReady = true;
+		await navigateFromUrl(lastHandledLoc);
 	});
 
 	// Handler for pull-to-refresh: refreshes current view without resetting navigation
@@ -143,7 +188,7 @@
 	}
 
 	function selectCurrentLocation() {
-		// Use the stored current location from navigateInto instead of traversing stale tree
+		// Use the stored current location (set by navigateToId) instead of traversing stale tree
 		if (locationNavigator.currentLocation) {
 			const pathStr = locationStore.path.map((p) => p.name).join(' / ');
 			locationNavigator.selectLocation(locationNavigator.currentLocation, pathStr);
@@ -573,7 +618,7 @@
 						<button
 							type="button"
 							class="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-							onclick={() => locationNavigator.navigateToPath(-1)}
+							onclick={() => goto('/location')}
 						>
 							<Home size={16} strokeWidth={1.5} />
 							<span>{t('location.all')}</span>
@@ -585,7 +630,7 @@
 							<button
 								type="button"
 								class="whitespace-nowrap rounded-lg px-2 py-1 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-								onclick={() => locationNavigator.navigateToPath(index)}
+								onclick={() => goto(`/location?loc=${pathItem.id}`)}
 							>
 								{pathItem.name}
 							</button>
@@ -651,7 +696,7 @@
 								.path.length > 0
 								? 'ml-2'
 								: ''}"
-							onclick={() => locationNavigator.navigateInto(location)}
+							onclick={() => goto(`/location?loc=${location.id}`)}
 						>
 							<div
 								class="rounded-lg bg-neutral-800 p-2.5 transition-colors group-hover:bg-primary-500/20"
@@ -702,6 +747,26 @@
 							{/if}
 						</span>
 					</Button>
+
+					<!-- View items in current location -->
+					{#if locationStore.path.length > 0}
+						<Button
+							variant="secondary"
+							full
+							onclick={() => {
+								// Save navigation path so we can restore it when coming back
+								sessionStorage.setItem('locationNavPath', JSON.stringify(locationStore.path));
+								goto(`/items?location_id=${locationStore.path[locationStore.path.length - 1].id}`);
+							}}
+						>
+							<List size={20} strokeWidth={1.5} />
+							<span>
+								{t('location.viewItems', {
+									name: locationStore.path[locationStore.path.length - 1].name,
+								})}
+							</span>
+						</Button>
+					{/if}
 				</div>
 			{/if}
 		{/if}

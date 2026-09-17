@@ -11,6 +11,7 @@ import { request } from './client';
 const DEMO_PREFS_KEY = 'hbc_demo_field_preferences';
 let isDemoMode = false;
 let isDemoModeExplicit = false;
+let clientSideImageCompression = false;
 
 /** Set demo mode status (called after fetching config) */
 export function setDemoMode(demoMode: boolean, explicitDemoMode: boolean = false): void {
@@ -26,6 +27,15 @@ export function getIsDemoMode(): boolean {
 /** Get explicit demo mode status (only HBC_DEMO_MODE env var, for security-sensitive features) */
 export function getIsDemoModeExplicit(): boolean {
 	return isDemoModeExplicit;
+}
+
+/** Set whether vision images should be compressed in the browser. */
+export function setClientSideImageCompression(enabled: boolean): void {
+	clientSideImageCompression = enabled;
+}
+
+export function getClientSideImageCompression(): boolean {
+	return clientSideImageCompression;
 }
 
 /** Get default empty preferences */
@@ -120,6 +130,7 @@ export interface ConfigResponse {
 	llm_model: string;
 	update_check_enabled: boolean;
 	image_quality: string;
+	client_side_image_compression: boolean;
 	log_level: string;
 	capture_max_images: number;
 	capture_max_file_size_mb: number;

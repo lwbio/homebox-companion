@@ -40,6 +40,7 @@ export {
 	downloadLogs,
 	fieldPreferences,
 	setDemoMode,
+	setClientSideImageCompression,
 	type VersionResponse,
 	type ConfigResponse,
 	type LogsResponse,
