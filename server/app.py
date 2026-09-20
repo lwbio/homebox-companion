@@ -30,6 +30,7 @@ from .middleware import (
     APIKeyBrowserGuardMiddleware,
     RequestBodyLimitMiddleware,
     RequestIDMiddleware,
+    RequestTimingMiddleware,
     SecurityHeadersMiddleware,
     request_id_var,
 )
@@ -336,6 +337,8 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     # Wrap the body limiter so rejected requests also receive a request ID.
     # Uses pure ASGI middleware to avoid issues with SSE streaming
     app.add_middleware(RequestIDMiddleware)  # type: ignore[arg-type]
+    # Request timing middleware (logs arrival time, end time, and duration)
+    app.add_middleware(RequestTimingMiddleware)  # type: ignore[arg-type]
 
     # Security headers middleware (adds X-Content-Type-Options, X-Frame-Options, etc.)
     app.add_middleware(SecurityHeadersMiddleware)  # type: ignore[arg-type]
@@ -350,6 +353,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Starlette wraps middleware in reverse registration order. Request ID
+    # must be outermost so timing logs share the same correlation context.
+    app.add_middleware(RequestIDMiddleware)  # type: ignore[arg-type]
 
     # Log security settings
     if resolved_settings.browser_origins_list == ["*"]:

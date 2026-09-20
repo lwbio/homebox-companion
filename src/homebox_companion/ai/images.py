@@ -146,23 +146,18 @@ def optimize_image_for_vision(
         return image_bytes, _detect_mime_type(image_bytes)
 
 
-def encode_image_to_data_uri(image_path: Path | str, optimize: bool = True) -> str:
+def encode_image_to_data_uri(image_path: Path | str) -> str:
     """Read an image file and return a data URI for vision model APIs.
 
     Args:
         image_path: Path to the image file.
-        optimize: Whether to optimize the image for vision processing.
 
     Returns:
         A data URI string (e.g., "data:image/jpeg;base64,...").
     """
     path = Path(image_path)
     image_bytes = path.read_bytes()
-
-    if optimize:
-        image_bytes, mime_type = optimize_image_for_vision(image_bytes)
-    else:
-        mime_type = _detect_mime_type(image_bytes)
+    image_bytes, mime_type = optimize_image_for_vision(image_bytes)
 
     # Extract suffix from mime_type (e.g., "image/jpeg" -> "jpeg")
     suffix = mime_type.split("/")[-1] if "/" in mime_type else "jpeg"
@@ -173,20 +168,17 @@ def encode_image_to_data_uri(image_path: Path | str, optimize: bool = True) -> s
 def encode_image_bytes_to_data_uri(
     image_bytes: bytes,
     mime_type: str = "image/jpeg",
-    optimize: bool = True,
 ) -> str:
     """Encode raw image bytes to a data URI for vision model APIs.
 
     Args:
         image_bytes: Raw image data.
         mime_type: MIME type of the image.
-        optimize: Whether to optimize the image for vision processing.
 
     Returns:
         A data URI string.
     """
-    if optimize:
-        image_bytes, mime_type = optimize_image_for_vision(image_bytes)
+    image_bytes, mime_type = optimize_image_for_vision(image_bytes)
 
     # Extract suffix from mime_type (e.g., "image/jpeg" -> "jpeg")
     suffix = mime_type.split("/")[-1] if "/" in mime_type else "jpeg"

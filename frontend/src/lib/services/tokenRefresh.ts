@@ -85,6 +85,7 @@ export async function refreshToken(): Promise<boolean> {
  * Internal refresh implementation — performs the actual HTTP call.
  */
 async function doRefresh(): Promise<boolean> {
+	const startedAt = performance.now();
 	try {
 		const response = await auth.refresh();
 		// Use setAuthenticatedState to ensure all state updates happen atomically
@@ -92,10 +93,16 @@ async function doRefresh(): Promise<boolean> {
 		// Reset retry count on successful refresh
 		retryCount = 0;
 		lastActivityTimestamp = Date.now();
+		log.info(
+			`[REFRESH TIMING] refresh succeeded | duration=${((performance.now() - startedAt) / 1000).toFixed(2)}s`
+		);
 		return true;
 	} catch (error) {
 		// Log error for debugging (previously swallowed silently)
-		log.error('Token refresh failed:', error);
+		log.error(
+			`[REFRESH TIMING] refresh failed | duration=${((performance.now() - startedAt) / 1000).toFixed(2)}s`,
+			error
+		);
 		return false;
 	}
 }

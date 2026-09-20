@@ -14,6 +14,7 @@
  * - SubmissionService: Homebox submission
  */
 
+import { tick } from 'svelte';
 import { workflowLogger as log } from '$lib/utils/logger';
 import { CaptureService } from './capture.svelte';
 import { AnalysisService } from './analysis.svelte';
@@ -111,6 +112,10 @@ class ScanWorkflow {
 	private _persistGeneration = 0;
 	/** Detects capture-context changes while analysis startup is awaiting persistence. */
 	private _captureRevision = 0;
+	/** Capture revision included in the last successful IndexedDB write. */
+	private _persistedCaptureRevision = -1;
+	/** Capture revision currently being serialized, if a write is active. */
+	private _activePersistCaptureRevision: number | null = null;
 
 	/** Flag to skip the initial effect run (avoids persist on construction) */
 	private _isFirstEffectRun = true;
@@ -555,7 +560,8 @@ class ScanWorkflow {
 
 	/** Start image analysis - coordinates with AnalysisService */
 	async startAnalysis(): Promise<void> {
-		log.info('ScanWorkflow.startAnalysis() called');
+		const flowStartedAt = performance.now();
+		log.info('[ANALYZE TIMING] ScanWorkflow.startAnalysis() started');
 
 		// Prevent starting a new analysis if one is already in progress
 		if (this._status === 'analyzing') {
@@ -576,10 +582,21 @@ class ScanWorkflow {
 		const expectedCaptureRevision = this._captureRevision;
 		this.cancelScheduledPersist();
 
-		// Save while still in a persistable state. The auto-save is debounced, so a
-		// fast click on Analyze can otherwise cancel the only pending image save.
-		log.debug('Persisting captured images before entering analysis');
-		await this.persistAsync();
+		const persistenceStartedAt = performance.now();
+		const needsCapturePersist = this._persistedCaptureRevision !== expectedCaptureRevision;
+		if (needsCapturePersist || this._persistPromise) {
+			// Save while still in a persistable state. The auto-save is debounced, so a
+			// fast click on Analyze can otherwise cancel the only pending image save.
+			log.debug(
+				`[ANALYZE TIMING] pre-analysis persist started (status=${this._status}) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
+			);
+			await this.persistAsync();
+			log.info(
+				`[ANALYSIS STARTUP] Capture persistence ready | duration=${((performance.now() - persistenceStartedAt) / 1000).toFixed(2)}s | mode=${needsCapturePersist ? 'saved' : 'waited'}`
+			);
+		} else {
+			log.info('[ANALYSIS STARTUP] Capture persistence already current | duration=0.00s');
+		}
 		if (
 			this._status !== 'capturing' ||
 			this._locationId !== expectedLocationId ||
@@ -592,9 +609,15 @@ class ScanWorkflow {
 
 		this._status = 'analyzing';
 		this._error = null;
-		log.debug('Status set to "analyzing", delegating to AnalysisService');
+		log.debug(
+			`[ANALYZE TIMING] status -> "analyzing" (Cancel button should now show) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
+		);
 
+		const analyzeStartedAt = performance.now();
 		const result = await this.analysisService.analyze(this.captureService.images);
+		log.info(
+			`[ANALYZE TIMING] analysisService.analyze() ended | duration=${((performance.now() - analyzeStartedAt) / 1000).toFixed(2)}s | success=${result.success}`
+		);
 
 		// Check if cancelled (status may have changed)
 		if (this._status !== 'analyzing') {
@@ -614,7 +637,7 @@ class ScanWorkflow {
 			} else {
 				this._status = 'reviewing';
 				log.info(
-					`Analysis complete! Detected ${result.items.length} item(s), transitioning to review`
+					`[ANALYZE TIMING] status -> "reviewing" (Cancel button should now hide) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s | ${result.items.length} item(s) detected`
 				);
 			}
 		} else {
@@ -626,8 +649,19 @@ class ScanWorkflow {
 		// Persist after analysis completes (success or partial)
 		// IMPORTANT: Await persist to ensure data is saved before user can close tab
 		if (this._status !== 'capturing') {
+			const postPersistStartedAt = performance.now();
+			log.debug(
+				`[ANALYZE TIMING] post-analysis persist started (status=${this._status}) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
+			);
 			await this.persistAsync();
+			log.info(
+				`[ANALYZE TIMING] post-analysis persist ended | duration=${((performance.now() - postPersistStartedAt) / 1000).toFixed(2)}s`
+			);
 		}
+
+		log.info(
+			`[ANALYZE TIMING] ScanWorkflow.startAnalysis() ended | total=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s | status=${this._status}`
+		);
 	}
 
 	/** Retry analysis for failed images only */
@@ -1126,9 +1160,23 @@ class ScanWorkflow {
 			return;
 		}
 
+		// Let effects caused by the state transition that requested this save run
+		// first. Their debounce is then cancelled instead of marking this same
+		// explicit snapshot dirty and causing a duplicate write.
+		await tick();
 		this.cancelScheduledPersist();
 		try {
-			await this.runPersist();
+			if (this._persistPromise) {
+				if (
+					this._activePersistCaptureRevision !== null &&
+					this._activePersistCaptureRevision !== this._captureRevision
+				) {
+					this._persistDirty = true;
+				}
+				await this._persistPromise;
+			} else {
+				await this.runPersist();
+			}
 			// A state change while the first save was running can queue a dirty
 			// follow-up. Drain the entire chain before image upload may begin.
 			while (this._persistPromise) {
@@ -1149,6 +1197,8 @@ class ScanWorkflow {
 		const generation = this.contextGeneration;
 		if (!scope) return;
 		const persistGeneration = this._persistGeneration;
+		const captureRevision = this._captureRevision;
+		this._activePersistCaptureRevision = captureRevision;
 
 		try {
 			// Step 1: Serialize images (convert File objects to base64)
@@ -1216,10 +1266,15 @@ class ScanWorkflow {
 				log.debug('_doPersist: Context changed during serialization, discarding stale write');
 				return;
 			}
-			await sessionPersistence.save(session, scope);
-			log.debug(
-				`_doPersist: SUCCESS - status=${this._status}, images=${images.length}, detected=${detectedItems.length}, confirmed=${confirmedItems.length}`
-			);
+			const saved = await sessionPersistence.save(session, scope);
+			if (saved && persistGeneration === this._persistGeneration) {
+				this._persistedCaptureRevision = captureRevision;
+				log.debug(
+					`_doPersist: SUCCESS - status=${this._status}, images=${images.length}, detected=${detectedItems.length}, confirmed=${confirmedItems.length}`
+				);
+			} else if (!saved) {
+				log.warn('_doPersist: IndexedDB save did not complete successfully');
+			}
 		} catch (error) {
 			// Non-critical - log but don't disrupt workflow
 			// Extract meaningful error info for logging (avoids minified stack traces)
@@ -1230,6 +1285,8 @@ class ScanWorkflow {
 			if (errorStack) {
 				log.debug(`_doPersist: Stack trace: ${errorStack}`);
 			}
+		} finally {
+			this._activePersistCaptureRevision = null;
 		}
 	}
 
@@ -1306,6 +1363,7 @@ class ScanWorkflow {
 			// Cache timestamps and ID for future persist() calls
 			this._persistedCreatedAt = session.createdAt;
 			this._persistedSessionId = session.id;
+			this._persistedCaptureRevision = this._captureRevision;
 
 			log.info('Session recovered successfully');
 			return true;
@@ -1444,6 +1502,8 @@ class ScanWorkflow {
 		this._error = null;
 		this._persistedCreatedAt = null; // Reset for next session
 		this._persistedSessionId = null; // Reset for next session
+		this._persistedCaptureRevision = -1;
+		this._activePersistCaptureRevision = null;
 		this.clearCaptureContext();
 		if (clearPersisted && scope) void sessionPersistence.clear(scope);
 	}

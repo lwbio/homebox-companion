@@ -297,7 +297,6 @@ For a quick setup, you only need to provide your OpenAI API key. All other setti
 | `HBC_MAX_UPLOAD_SIZE_MB` | `20` | Maximum bytes per file, expressed in MiB; must be positive. |
 | `HBC_MAX_REQUEST_SIZE_MB` | `100` | Maximum aggregate API request body in MiB, including all files and multipart overhead; enforced while streaming, before parsing can exceed the limit. Must be positive. |
 | `HBC_IMAGE_QUALITY` | `medium` | Image quality for Homebox uploads: `raw`, `high`, `medium`, `low` |
-| `HBC_CLIENT_SIDE_IMAGE_COMPRESSION` | `false` | Compress vision images in the browser before upload to reduce mobile bandwidth |
 
 </details>
 
@@ -308,7 +307,7 @@ Requests exceeding the body limit return HTTP 413, including chunked uploads. Mi
 <details>
 <summary>Image Quality</summary>
 
-Control compression applied to images uploaded to Homebox. Compression happens server-side during AI analysis by default. Enable client-side compression when reducing mobile upload bandwidth is more important than avoiding browser CPU usage.
+Control compression applied to images uploaded to Homebox. Compression happens server-side during AI analysis.
 
 | Quality Level | Max Dimension | JPEG Quality | File Size | Use Case |
 |--------------|---------------|--------------|-----------|----------|
@@ -323,14 +322,6 @@ HBC_IMAGE_QUALITY=high
 ```
 
 **Note:** This setting only affects images uploaded to Homebox. AI analysis always uses optimized images regardless of this setting.
-
-To compress vision images in the browser before they are sent to the server, set:
-
-```bash
-HBC_CLIENT_SIDE_IMAGE_COMPRESSION=true
-```
-
-The browser uses a 2048px maximum dimension and 85% JPEG quality. Because the backend only receives the compressed image, Homebox attachments for scanned items are also capped at 2048px while this is enabled (the `HBC_IMAGE_QUALITY` setting is effectively overridden for those images).
 
 </details>
 

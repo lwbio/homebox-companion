@@ -1,17 +1,44 @@
 """Logs API routes for debugging and reference."""
 
+from __future__ import annotations
+
 import os
 import re
 from collections import deque
+from datetime import datetime
 from glob import glob
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from loguru import logger
+from pydantic import BaseModel, Field
 
-from ..dependencies import require_auth
+from homebox_companion.homebox.client import HomeboxClient
+
+from ..dependencies import get_client, get_token
+
+if TYPE_CHECKING:
+    import loguru
 
 router = APIRouter()
+
+# Allowed frontend log levels (must match loguru level names)
+_ALLOWED_LEVELS = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
+
+# Maximum number of log entries accepted per request
+_MAX_BATCH_SIZE = 100
+_TIMING_MESSAGE = re.compile(
+    r"^\[(?:ANALYZE|PERSIST|VISION) TIMING\] [A-Za-z0-9_ ()]+ \| "
+    r"(?:duration|t|total)=\d+(?:\.\d+)?s$"
+)
+
+
+async def require_valid_token(token: str = Depends(get_token), client: HomeboxClient = Depends(get_client)) -> None:
+    """Logs contain shared data; verify credentials before reading or writing."""
+    if not await client.validate_token(token):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 # Strict date format validation: YYYY-MM-DD
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -67,6 +94,30 @@ def _validate_date_format(date: str | None) -> None:
         )
 
 
+def _parse_client_timestamp(timestamp: str) -> datetime | None:
+    """Parse the ISO timestamp supplied by the browser."""
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _log_frontend_entry(level: str, message: str, timestamp: str) -> None:
+    """Write a frontend log entry using the browser event time."""
+    client_time = _parse_client_timestamp(timestamp)
+    if client_time is None:
+        logger.log(level, message)
+        return
+
+    # Loguru uses a datetime subclass that understands its ``YYYY`` formatting
+    # tokens. Preserve that type when replacing the record time.
+    def use_client_time(record: loguru.Record) -> None:
+        record_time_type = type(record["time"])
+        record["time"] = record_time_type.fromtimestamp(client_time.timestamp(), client_time.tzinfo)
+
+    logger.patch(use_client_time).log(level, message)
+
+
 class LogsResponse(BaseModel):
     """Response containing log entries."""
 
@@ -76,7 +127,7 @@ class LogsResponse(BaseModel):
     truncated: bool
 
 
-@router.get("/logs", response_model=LogsResponse, dependencies=[Depends(require_auth)])
+@router.get("/logs", response_model=LogsResponse, dependencies=[Depends(require_valid_token)])
 async def get_logs(
     lines: int = Query(default=200, ge=1, le=2000, description="Number of lines to return"),
     date: str | None = Query(default=None, description="Log date in YYYY-MM-DD format"),
@@ -128,7 +179,7 @@ async def get_logs(
         ) from e
 
 
-@router.get("/logs/download", dependencies=[Depends(require_auth)])
+@router.get("/logs/download", dependencies=[Depends(require_valid_token)])
 async def download_logs(
     date: str | None = Query(default=None, description="Log date in YYYY-MM-DD format"),
 ) -> FileResponse:
@@ -157,7 +208,7 @@ async def download_logs(
     )
 
 
-@router.get("/logs/llm-debug", response_model=LogsResponse, dependencies=[Depends(require_auth)])
+@router.get("/logs/llm-debug", response_model=LogsResponse, dependencies=[Depends(require_valid_token)])
 async def get_llm_debug_logs(
     lines: int = Query(default=200, ge=1, le=2000, description="Number of lines to return"),
     date: str | None = Query(default=None, description="Log date in YYYY-MM-DD format"),
@@ -209,7 +260,7 @@ async def get_llm_debug_logs(
         ) from e
 
 
-@router.get("/logs/llm-debug/download", dependencies=[Depends(require_auth)])
+@router.get("/logs/llm-debug/download", dependencies=[Depends(require_valid_token)])
 async def download_llm_debug_logs(
     date: str | None = Query(default=None, description="Log date in YYYY-MM-DD format"),
 ) -> FileResponse:
@@ -236,3 +287,59 @@ async def download_llm_debug_logs(
         filename=filename,
         media_type="text/plain",
     )
+
+
+class FrontendLogEntry(BaseModel):
+    """A single log entry forwarded from the frontend logger."""
+
+    timestamp: str = Field(max_length=64, description="ISO 8601 timestamp from the client")
+    level: str = Field(max_length=16, description="Log level (TRACE..CRITICAL)")
+    module: str = Field(max_length=64, description="Frontend logger module/prefix")
+    message: str = Field(max_length=1024, description="Log message")
+    error: str | None = Field(default=None, max_length=1024, description="Serialized error/stack")
+
+
+class FrontendLogsRequest(BaseModel):
+    """Batch of frontend log entries to ingest."""
+
+    logs: list[FrontendLogEntry] = Field(default_factory=list, max_length=_MAX_BATCH_SIZE)
+
+
+@router.post("/logs/frontend", dependencies=[Depends(require_valid_token)])
+async def ingest_frontend_logs(payload: FrontendLogsRequest) -> dict[str, int]:
+    """Ingest frontend log entries into the unified server log.
+
+    Frontend logs are forwarded here in batches and written through loguru
+    so they land in the same daily `homebox_companion_*.log` file as server
+    logs, enabling unified analysis. Entries are prefixed with `[Frontend]`
+    and their source module to distinguish them from server-side logs.
+
+    Requires authentication to prevent abuse.
+    """
+    logs = payload.logs
+    if len(logs) > _MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many log entries. Maximum is {_MAX_BATCH_SIZE} per request.",
+        )
+
+    if any(
+        not _TIMING_MESSAGE.fullmatch(entry.message)
+        or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", entry.module)
+        or entry.error is not None
+        for entry in logs
+    ):
+        raise HTTPException(status_code=400, detail="Only fixed-format timing diagnostics are accepted")
+
+    ingested = 0
+    for entry in logs:
+        level = entry.level.strip().upper()
+        if level not in _ALLOWED_LEVELS:
+            level = "INFO"
+
+        message = f"[Frontend][{entry.module}] {entry.message}"
+
+        _log_frontend_entry(level, message, entry.timestamp)
+        ingested += 1
+
+    return {"ingested": ingested}

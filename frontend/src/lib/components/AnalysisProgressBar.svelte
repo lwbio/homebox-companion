@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { createLogger } from '$lib/utils/logger';
+
+	const log = createLogger({ prefix: 'AnalysisProgressBar' });
 
 	// Props
 	interface Props {
@@ -91,6 +94,7 @@
 		} else {
 			// All items complete - animate to 100% then call onComplete
 			stopAnimation();
+			const completionStartedAt = performance.now();
 
 			// Smoothly animate to 100%
 			stopCompletionAnimation();
@@ -110,6 +114,9 @@
 						completionTimeout = window.setTimeout(() => {
 							completionTimeout = null;
 							hasCalledComplete = true;
+							log.debug(
+								`[ANALYZE TIMING] progress bar onComplete fired | duration=${((performance.now() - completionStartedAt) / 1000).toFixed(2)}s`
+							);
 							onComplete();
 						}, 600); // 300ms pop + 300ms hold
 					}

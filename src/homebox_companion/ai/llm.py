@@ -13,6 +13,7 @@ Public API:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from loguru import logger
@@ -38,6 +39,19 @@ def _resolve_model_for_capabilities() -> str | None:
 
     creds = resolve_llm_credentials()
     return creds.model
+
+
+def _qwen_vision_extra_body(model: str | None) -> dict[str, bool] | None:
+    """Disable DashScope Qwen thinking for schema-constrained vision extraction."""
+    if not model or "qwen" not in model.lower():
+        return None
+
+    from ..core.llm_utils import resolve_llm_credentials
+
+    api_base = resolve_llm_credentials().api_base or ""
+    if "dashscope.aliyuncs.com" not in api_base.lower():
+        return None
+    return {"enable_thinking": False}
 
 
 async def chat_completion(
@@ -109,8 +123,14 @@ async def vision_completion(
     if not image_data_uris:
         raise ValueError("vision_completion requires at least one image")
 
+    vision_started = time.perf_counter()
+
     # Resolve model for capability checks
     resolved_model = _resolve_model_for_capabilities()
+    logger.debug(
+        f"Vision completion starting | model={resolved_model} | images={len(image_data_uris)} | "
+        f"structured_output={'yes' if response_model else 'no'}"
+    )
 
     # Determine response format
     response_format: type[BaseModel] | None = None
@@ -202,8 +222,28 @@ async def vision_completion(
         {"role": "user", "content": content},
     ]
 
-    return await json_completion(
+    # Qwen hybrid-thinking models can spend thousands of hidden output tokens
+    # reasoning about a small inventory JSON response. Vision extraction is
+    # constrained by a schema and does not benefit enough to justify that delay.
+    extra_body = _qwen_vision_extra_body(resolved_model)
+    if extra_body:
+        from ..core.persistent_settings import get_fallback_profile
+
+        # Router forwards request kwargs to fallback deployments as well.
+        # A non-DashScope fallback cannot accept this provider-specific option.
+        if get_fallback_profile() is not None:
+            extra_body = None
+    if extra_body:
+        logger.info("Qwen vision request: thinking disabled for lower latency")
+
+    result = await json_completion(
         messages,
         response_format=response_format,
         expected_keys=expected_keys,
+        extra_body=extra_body,
     )
+    logger.debug(
+        f"[VISION TIMING] vision_completion finished | duration={time.perf_counter() - vision_started:.2f}s | "
+        f"model={resolved_model} | images={len(image_data_uris)}"
+    )
+    return result

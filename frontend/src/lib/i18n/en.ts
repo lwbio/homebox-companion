@@ -105,6 +105,7 @@ export default {
 	'capture.inside': 'Inside:',
 	'capture.analyzing': 'Analyzing...',
 	'capture.analysisComplete': 'Analysis complete!',
+	'capture.stillWorking': 'Still working... please keep this page open',
 	'capture.someFailed': 'Some Images Failed to Analyze',
 	'capture.failedCount':
 		'{failed} of {total} image(s) could not be processed. Try again or continue with successful images.',
@@ -232,6 +233,7 @@ export default {
 	'chat.suggestion.locations': 'What locations do I have?',
 	'chat.suggestion.tags': 'List my tags',
 	'chat.suggestion.count': 'How many items are in my inventory?',
+	'chat.suggestion.keys': 'Where did I put my keys?',
 	'chat.clearConfirm': 'Clear all chat history?',
 	'chat.inputPlaceholder': 'Ask about your inventory...',
 	'chat.assistantResponding': 'Assistant is responding',

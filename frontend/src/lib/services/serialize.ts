@@ -2,12 +2,12 @@
  * Serialization utilities for session persistence
  *
  * Handles conversion between runtime types (with File objects and Object URLs)
- * and storable types (with base64 data URLs only).
+ * and IndexedDB structured-clone types.
  *
- * Persistence format:
- * - This format represents images as base64 data URLs rather than File objects
- * - Object URLs (blob:...) are session-scoped and become invalid after page reload
- * - Base64 data URLs preserve image bytes across reloads
+	* Why this is needed:
+	* - IndexedDB stores Blob/File objects directly without base64 expansion
+	* - Object URLs (blob:...) are session-scoped and become invalid after page reload
+	* - Legacy sessions used base64 data URLs and remain recoverable
  */
 
 import type {
@@ -28,16 +28,20 @@ import { createUuid } from '$lib/utils/uuid';
 // STORED TYPES (Serializable - no File objects or Object URLs)
 // =============================================================================
 
-/** Serializable version of CapturedImage */
+/** IndexedDB-storable version of CapturedImage */
 export interface StoredImage {
 	id: string;
 	filename: string;
 	mimeType: string;
-	/** base64 data URL (NOT object URL) */
-	dataUrl: string;
+	/** Native image blob for efficient IndexedDB storage. */
+	blob?: Blob;
+	/** Legacy base64 data URL, retained only for backward-compatible recovery. */
+	dataUrl?: string;
 	separateItems: boolean;
 	extraInstructions: string;
-	/** base64 data URLs for additional images */
+	/** Native additional image blobs. */
+	additionalBlobs?: Blob[];
+	/** Legacy base64 data URLs for additional images. */
 	additionalDataUrls?: string[];
 	additionalFilenames?: string[];
 	additionalMimeTypes?: string[];
@@ -184,20 +188,14 @@ export function revokeImageObjectUrls(image: CapturedImage): void {
 // =============================================================================
 
 /**
- * Serialize a CapturedImage to StoredImage.
- * Converts File objects and Object URLs to base64 data URLs.
+ * Serialize a CapturedImage to StoredImage using native blobs. IndexedDB can
+ * structured-clone blobs without the size and CPU overhead of base64 strings.
  */
-export async function serializeImage(img: CapturedImage): Promise<StoredImage> {
-	// Convert main file to base64
-	const dataUrl = await fileToDataUrl(img.file);
-
-	// Convert additional files to base64
-	let additionalDataUrls: string[] | undefined;
+export function serializeImage(img: CapturedImage): StoredImage {
 	let additionalFilenames: string[] | undefined;
 	let additionalMimeTypes: string[] | undefined;
 
 	if (img.additionalFiles && img.additionalFiles.length > 0) {
-		additionalDataUrls = await Promise.all(img.additionalFiles.map(fileToDataUrl));
 		additionalFilenames = img.additionalFiles.map((f) => f.name);
 		additionalMimeTypes = img.additionalFiles.map((f) => f.type || 'image/jpeg');
 	}
@@ -206,10 +204,10 @@ export async function serializeImage(img: CapturedImage): Promise<StoredImage> {
 		id: createUuid(),
 		filename: img.file.name,
 		mimeType: img.file.type || 'image/jpeg',
-		dataUrl,
+		blob: img.file,
 		separateItems: img.separateItems,
 		extraInstructions: img.extraInstructions,
-		additionalDataUrls,
+		additionalBlobs: img.additionalFiles ? Array.from(img.additionalFiles) : undefined,
 		additionalFilenames,
 		additionalMimeTypes,
 		assetId: img.assetId,
@@ -263,17 +261,29 @@ export function serializeConfirmedItem(item: ConfirmedItem): StoredConfirmedItem
 
 /**
  * Deserialize a StoredImage back to CapturedImage.
- * Converts base64 data URLs back to File objects and creates fresh Object URLs.
+ * Supports native blobs and legacy base64 sessions.
  */
 export async function deserializeImage(stored: StoredImage): Promise<CapturedImage> {
-	// Convert base64 back to File
-	const file = await dataUrlToFile(stored.dataUrl, stored.filename, stored.mimeType);
+	let file: File;
+	if (stored.blob) {
+		file = new File([stored.blob], stored.filename, { type: stored.mimeType || stored.blob.type });
+	} else if (stored.dataUrl) {
+		file = await dataUrlToFile(stored.dataUrl, stored.filename, stored.mimeType);
+	} else {
+		throw new Error(`Stored image ${stored.id} has no blob or legacy data URL`);
+	}
 
 	// Convert additional images
 	let additionalFiles: File[] | undefined;
 	let additionalDataUrls: string[] | undefined;
 
-	if (stored.additionalDataUrls && stored.additionalDataUrls.length > 0) {
+	if (stored.additionalBlobs && stored.additionalBlobs.length > 0) {
+		additionalFiles = stored.additionalBlobs.map((blob, i) => {
+			const filename = stored.additionalFilenames?.[i] || `additional_${i}.jpg`;
+			const mimeType = stored.additionalMimeTypes?.[i] || blob.type || 'image/jpeg';
+			return new File([blob], filename, { type: mimeType });
+		});
+	} else if (stored.additionalDataUrls && stored.additionalDataUrls.length > 0) {
 		additionalFiles = await Promise.all(
 			stored.additionalDataUrls.map((url, i) => {
 				const filename = stored.additionalFilenames?.[i] || `additional_${i}.jpg`;
@@ -281,9 +291,8 @@ export async function deserializeImage(stored: StoredImage): Promise<CapturedIma
 				return dataUrlToFile(url, filename, mimeType);
 			})
 		);
-		// Create fresh Object URLs for display
-		additionalDataUrls = additionalFiles.map((f) => URL.createObjectURL(f));
 	}
+	if (additionalFiles) additionalDataUrls = additionalFiles.map((f) => URL.createObjectURL(f));
 
 	return {
 		file,

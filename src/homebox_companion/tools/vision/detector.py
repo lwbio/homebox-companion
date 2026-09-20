@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -31,7 +33,6 @@ async def detect_items_from_bytes(
     field_preferences: dict[str, str] | None = None,
     output_language: str | None = None,
     custom_fields: list[CustomFieldDefinition] | None = None,
-    optimize_images: bool = True,
 ) -> list[DetectedItem]:
     """Use LLM vision model to detect items from raw image bytes.
 
@@ -47,18 +48,22 @@ async def detect_items_from_bytes(
         field_preferences: Optional dict of field customization instructions.
         output_language: Target language for AI output (default: English).
         custom_fields: Optional list of custom field definitions.
-        optimize_images: Whether to resize and recompress images before sending to the LLM.
 
     Returns:
         List of detected items with quantities, descriptions, and optionally
         extended fields when extract_extended_fields is True.
     """
     # Build list of all image data URIs
-    image_data_uris = [encode_image_bytes_to_data_uri(image_bytes, mime_type, optimize=optimize_images)]
+    encode_started = time.perf_counter()
+    images = [(image_bytes, mime_type), *(additional_images or [])]
+    image_data_uris = await asyncio.gather(
+        *(asyncio.to_thread(encode_image_bytes_to_data_uri, data, mime) for data, mime in images)
+    )
 
-    if additional_images:
-        for add_bytes, add_mime in additional_images:
-            image_data_uris.append(encode_image_bytes_to_data_uri(add_bytes, add_mime, optimize=optimize_images))
+    logger.debug(
+        f"[VISION TIMING] Image data URIs encoded | duration={time.perf_counter() - encode_started:.2f}s | "
+        f"images={len(image_data_uris)}"
+    )
 
     return await _detect_items_from_data_uris(
         image_data_uris,
@@ -108,6 +113,7 @@ async def _detect_items_from_data_uris(
     logger.debug(f"Custom fields: {len(custom_fields) if custom_fields else 0}")
 
     # Build prompts
+    prompt_started = time.perf_counter()
     if multi_image:
         system_prompt = build_multi_image_system_prompt(
             tags,
@@ -130,20 +136,51 @@ async def _detect_items_from_data_uris(
     user_prompt = build_detection_user_prompt(
         extra_instructions, extract_extended_fields, multi_image, single_item, output_language
     )
+    logger.debug(
+        f"[VISION TIMING] Prompts built | duration={time.perf_counter() - prompt_started:.2f}s | "
+        f"system_chars={len(system_prompt)} | user_chars={len(user_prompt)}"
+    )
 
     # Call LLM (with structured output when supported)
     response_model = get_items_response_model(custom_fields)
-    parsed_content = await vision_completion(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        image_data_uris=image_data_uris,
-        expected_keys=["items"],
-        response_model=response_model,
+    llm_started_at = time.perf_counter()
+    try:
+        parsed_content = await vision_completion(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            image_data_uris=image_data_uris,
+            expected_keys=["items"],
+            response_model=response_model,
+        )
+    except asyncio.CancelledError:
+        llm_duration = time.perf_counter() - llm_started_at
+        logger.info(
+            f"[VISION TIMING] LLM image detection cancelled | duration={llm_duration:.2f}s | "
+            f"images={len(image_data_uris)}"
+        )
+        raise
+    except Exception:
+        llm_duration = time.perf_counter() - llm_started_at
+        logger.warning(
+            f"[VISION TIMING] LLM image detection failed | duration={llm_duration:.2f}s | "
+            f"images={len(image_data_uris)}"
+        )
+        raise
+
+    llm_duration = time.perf_counter() - llm_started_at
+    logger.info(
+        f"[VISION TIMING] LLM image detection completed | duration={llm_duration:.2f}s | "
+        f"images={len(image_data_uris)} | raw_items={len(parsed_content.get('items', []))}"
     )
 
     # Validate LLM output with Pydantic (dynamic model if custom fields configured)
     adapter = get_items_adapter(custom_fields)
+    validate_started = time.perf_counter()
     items = adapter.validate_python(parsed_content.get("items", []))
+    logger.debug(
+        f"[VISION TIMING] Items validated | duration={time.perf_counter() - validate_started:.2f}s | "
+        f"items={len(items)}"
+    )
 
     logger.info(f"Detected {len(items)} items from {len(image_data_uris)} image(s)")
     for item in items:

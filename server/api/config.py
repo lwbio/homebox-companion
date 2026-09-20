@@ -19,7 +19,6 @@ class ConfigResponse(BaseModel):
     llm_model: str
     update_check_enabled: bool
     image_quality: str
-    client_side_image_compression: bool
     log_level: str
     capture_max_images: int
     capture_max_file_size_mb: int

@@ -257,30 +257,51 @@ export async function load(scope = captureSessionScope()): Promise<StoredSession
  * Save the current session state.
  * Overwrites the existing session for the supplied identity and collection.
  */
-export async function save(session: StoredSession, scope = captureSessionScope()): Promise<void> {
+export async function save(
+	session: StoredSession,
+	scope = captureSessionScope()
+): Promise<boolean> {
 	if (!browser) {
-		return;
+		return false;
 	}
 	if (!scope) {
 		log.warn('Refusing to persist a scan without a verified context and collection');
-		return;
+		return false;
 	}
 
 	try {
 		const db = await getDb();
 		const key = sessionKey(scope);
+		const startedAt = performance.now();
 
 		// Update the updatedAt timestamp
 		session.updatedAt = Date.now();
 
-		await db.put(STORE_NAME, session, key);
+		try {
+			// Recovery data favors latency over strict fsync durability. Native blobs
+			// plus relaxed durability avoid long mobile stalls before AI upload.
+			const transaction = db.transaction(STORE_NAME, 'readwrite', { durability: 'relaxed' });
+			await transaction.store.put(session, key);
+			await transaction.done;
+		} catch (error) {
+			if (!(error instanceof TypeError)) throw error;
+			// Older browsers may not support transaction durability options.
+			log.debug('Relaxed IndexedDB transactions unsupported, using default durability');
+			await db.put(STORE_NAME, session, key);
+		}
+		const durationSeconds = (performance.now() - startedAt) / 1000;
+		const timingMessage = `[PERSIST TIMING] IndexedDB save completed | duration=${durationSeconds.toFixed(2)}s | images=${session.images?.length ?? 0}`;
+		if (durationSeconds >= 5) log.warn(timingMessage);
+		else log.debug(timingMessage);
 		log.debug(`Saved session: status=${session.status}, images=${session.images?.length ?? 0}`);
+		return true;
 	} catch (error) {
 		// Extract meaningful error info for logging (avoids minified stack traces)
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		const errorName = error instanceof Error ? error.name : 'Unknown';
 		log.error(`Error saving session: [${errorName}] ${errorMessage}`);
 		// Don't throw - persistence failures shouldn't break the workflow
+		return false;
 	}
 }
 

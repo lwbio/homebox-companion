@@ -370,12 +370,17 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 
 	// First attempt
 	let response: Response;
+	const requestStartedAt = performance.now();
+	log.debug(`Sending ${endpoint} request`);
 	try {
 		response = await fetch(`${BASE_URL}${endpoint}`, {
 			...options,
 			headers: getHeaders(),
 			signal,
 		});
+		log.debug(
+			`Response from ${endpoint}: ${response.status} | duration=${((performance.now() - requestStartedAt) / 1000).toFixed(2)}s`
+		);
 	} catch (error) {
 		const networkError = wrapFetchError(error, endpoint, signal);
 		log.error(`Network error for ${endpoint}`, networkError);
@@ -396,12 +401,16 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 					: options.signal;
 
 			log.debug(`Retrying ${endpoint} after token refresh`);
+			const retryStartedAt = performance.now();
 			try {
 				response = await fetch(`${BASE_URL}${endpoint}`, {
 					...options,
 					headers: getHeaders(),
 					signal: retrySignal,
 				});
+				log.debug(
+					`Retry response from ${endpoint}: ${response.status} | duration=${((performance.now() - retryStartedAt) / 1000).toFixed(2)}s`
+				);
 			} catch (error) {
 				const networkError = wrapFetchError(error, endpoint, retrySignal);
 				log.error(`Network error on retry for ${endpoint}`, networkError);
@@ -594,6 +603,91 @@ export async function requestBlobUrl(
 }
 
 /**
+ * Log the browser's Resource Timing breakdown for a request so network delays can
+ * be attributed to a specific phase (DNS, connect, upload, TTFB, download).
+ */
+function logResourceTiming(
+	requestUrl: string,
+	requestPath: string,
+	requestStartedAt: number
+): PerformanceResourceTiming | undefined {
+	try {
+		if (typeof performance === 'undefined' || !performance.getEntriesByType) return undefined;
+		const resourceEntries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+		const entries = performance
+			.getEntriesByType('resource')
+			.filter(
+				(entry): entry is PerformanceResourceTiming => entry instanceof PerformanceResourceTiming
+			)
+			.filter((entry) => {
+				if (entry.name === requestUrl || entry.name.startsWith(`${requestUrl}?`)) return true;
+				try {
+					return new URL(entry.name).pathname === requestPath;
+				} catch {
+					return entry.name.endsWith(requestPath);
+				}
+			})
+			.filter((entry) => entry.fetchStart >= requestStartedAt - 100);
+		const entry = entries.at(-1);
+		if (!entry) return undefined;
+
+		const f = entry.fetchStart;
+		const sec = (v: number) => (((v || f) - f) / 1000).toFixed(2);
+		log.debug(
+			`[DETECT TIMING] resource phases | dns=${sec(entry.domainLookupEnd)} connect=${sec(entry.connectEnd)} requestSent=${sec(entry.requestStart)} ttfb=${sec(entry.responseStart)} responseEnd=${sec(entry.responseEnd)} | fetchStartDelta=${((f - requestStartedAt) / 1000).toFixed(2)}s | entries=${resourceEntries.length}`
+		);
+		return entry;
+	} catch {
+		// Best-effort instrumentation only.
+		return undefined;
+	}
+}
+
+function pageExecutionState(): string {
+	if (typeof document === 'undefined') return 'unavailable';
+	return document.visibilityState;
+}
+
+function pageWasDiscarded(): string {
+	if (typeof document === 'undefined') return 'unavailable';
+	return 'wasDiscarded' in document
+		? String((document as Document & { wasDiscarded?: boolean }).wasDiscarded ?? false)
+		: 'unsupported';
+}
+
+let lastPageLifecycleEvent = 'initial';
+let lastPageLifecycleAt = typeof performance === 'undefined' ? 0 : performance.now();
+
+if (typeof document !== 'undefined') {
+	const recordPageLifecycle = (event: string): void => {
+		lastPageLifecycleEvent = event;
+		lastPageLifecycleAt = performance.now();
+	};
+
+	document.addEventListener('visibilitychange', () => recordPageLifecycle('visibilitychange'));
+	document.addEventListener('freeze', () => recordPageLifecycle('freeze'));
+	document.addEventListener('resume', () => recordPageLifecycle('resume'));
+	window.addEventListener('pagehide', () => recordPageLifecycle('pagehide'));
+	window.addEventListener('pageshow', () => recordPageLifecycle('pageshow'));
+}
+
+function lifecycleDiagnostic(): string {
+	const sinceLastEvent = (performance.now() - lastPageLifecycleAt) / 1000;
+	return `visibility=${pageExecutionState()} | wasDiscarded=${pageWasDiscarded()} | lastLifecycle=${lastPageLifecycleEvent} | sinceLifecycle=${sinceLastEvent.toFixed(2)}s`;
+}
+
+function scheduleFetchResumeDiagnostic(requestStartedAt: number): ReturnType<typeof setTimeout> {
+	return setTimeout(() => {
+		const delayMs = performance.now() - requestStartedAt;
+		if (delayMs > 3000) {
+			log.warn(
+				`[DETECT TIMING] fetch continuation delayed | elapsed=${(delayMs / 1000).toFixed(2)}s | ${lifecycleDiagnostic()}`
+			);
+		}
+	}, 2000);
+}
+
+/**
  * Make a FormData API request with automatic auth header, timeout, and error handling.
  * Automatically retries once if token refresh succeeds after a 401.
  * Use this for file uploads and multipart form submissions.
@@ -625,15 +719,36 @@ export async function requestFormData<T>(
 
 	// First attempt
 	let response: Response;
+	const requestStartedAt = performance.now();
+	let headersReceivedAt: number;
+	const resumeDiagnostic = scheduleFetchResumeDiagnostic(requestStartedAt);
+	const requestUrl =
+		typeof window === 'undefined'
+			? `${BASE_URL}${endpoint}`
+			: new URL(`${BASE_URL}${endpoint}`, window.location.href).href;
+	const requestPath =
+		typeof window === 'undefined' ? `${BASE_URL}${endpoint}` : new URL(requestUrl).pathname;
 	try {
 		log.debug(`FormData request to ${endpoint}`);
-		response = await fetch(`${BASE_URL}${endpoint}`, {
+		response = await fetch(requestUrl, {
 			method: 'POST',
 			headers: getHeaders(),
 			body: formData,
 			signal,
 		});
+		headersReceivedAt = performance.now();
+		clearTimeout(resumeDiagnostic);
+		log.debug(
+			`[DETECT TIMING] response headers received | duration=${((headersReceivedAt - requestStartedAt) / 1000).toFixed(2)}s | signalAborted=${signal?.aborted ?? false} | abortReason=${signal?.reason?.name ?? 'none'} | ${lifecycleDiagnostic()}`
+		);
+		const resourceEntry = logResourceTiming(requestUrl, requestPath, requestStartedAt);
+		if (resourceEntry && headersReceivedAt - resourceEntry.responseEnd > 3000) {
+			log.warn(
+				`[DETECT TIMING] fetch continuation resumed late | afterResourceEnd=${((headersReceivedAt - resourceEntry.responseEnd) / 1000).toFixed(2)}s | ${lifecycleDiagnostic()}`
+			);
+		}
 	} catch (error) {
+		clearTimeout(resumeDiagnostic);
 		const networkError = wrapFetchError(error, endpoint, signal);
 		log.error(`Network error for ${endpoint}`, networkError);
 		throw networkError;
@@ -693,5 +808,10 @@ export async function requestFormData<T>(
 	}
 	assertCurrentScope(scope);
 
-	return parseResponseBody<T>(response);
+	const body = await parseResponseBody<T>(response);
+	const bodyParsedAt = performance.now();
+	log.debug(
+		`[DETECT TIMING] response body parsed | total=${((bodyParsedAt - requestStartedAt) / 1000).toFixed(2)}s | body=${((bodyParsedAt - headersReceivedAt) / 1000).toFixed(2)}s`
+	);
+	return body;
 }

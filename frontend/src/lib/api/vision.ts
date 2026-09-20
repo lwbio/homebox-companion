@@ -3,8 +3,7 @@
  */
 
 import { request, requestFormData } from './client';
-import { getIsDemoMode, fieldPreferences, getClientSideImageCompression } from './settings';
-import { compressImageForVision, compressImagesForVision } from '../utils/image';
+import { getIsDemoMode, fieldPreferences } from './settings';
 import { apiLogger as log } from '../utils/logger';
 import type {
 	DetectionResponse,
@@ -87,13 +86,9 @@ export const vision = {
 			`Options: singleItem=${options.singleItem ?? false}, extractExtendedFields=${options.extractExtendedFields ?? true}, additionalImages=${options.additionalImages?.length ?? 0}`
 		);
 
+		const formDataStartedAt = performance.now();
 		const formData = new FormData();
-		const clientCompress = getClientSideImageCompression();
-		const uploadImage = clientCompress ? await compressImageForVision(image) : image;
-		const uploadAdditional = clientCompress
-			? await compressImagesForVision(options.additionalImages ?? [])
-			: (options.additionalImages ?? []);
-		formData.append('image', uploadImage);
+		formData.append('image', image);
 
 		if (options.singleItem !== undefined) {
 			formData.append('single_item', String(options.singleItem));
@@ -108,21 +103,35 @@ export const vision = {
 			formData.append('extract_extended_fields', String(options.extractExtendedFields));
 		}
 		if (options.additionalImages) {
-			for (const img of uploadAdditional) {
+			for (const img of options.additionalImages) {
 				formData.append('additional_images', img);
 			}
 		}
 		if (options.sessionId) {
 			formData.append('session_id', options.sessionId);
 		}
+		log.debug(
+			`[DETECT TIMING] FormData built | duration=${((performance.now() - formDataStartedAt) / 1000).toFixed(2)}s | images=${1 + (options.additionalImages?.length ?? 0)}`
+		);
 
+		const headersStartedAt = performance.now();
 		const headers = await buildVisionHeaders();
+		const headersMs = performance.now() - headersStartedAt;
+		log.debug(`[DETECT TIMING] headers built | duration=${(headersMs / 1000).toFixed(2)}s`);
 		log.info('Sending vision/detect request to backend');
-		return requestFormData<DetectionResponse>('/tools/vision/detect', formData, {
+		const requestStartedAt = performance.now();
+		const response = await requestFormData<DetectionResponse>('/tools/vision/detect', formData, {
 			errorMessage: 'Detection failed',
 			signal: options.signal,
 			headers,
 		});
+		log.info(
+			`[DETECT TIMING] backend request completed | duration=${((performance.now() - requestStartedAt) / 1000).toFixed(2)}s`
+		);
+		log.debug(
+			`[DETECT TIMING] detect returning | items=${response.items.length} | compressed=${response.compressed_images?.length ?? 0}`
+		);
+		return response;
 	},
 
 	/**
@@ -136,10 +145,8 @@ export const vision = {
 	): Promise<AdvancedItemDetails> => {
 		log.debug(`Preparing analysis request: item="${itemName}", images=${images.length}`);
 
-		const clientCompress = getClientSideImageCompression();
-		const uploadImages = clientCompress ? await compressImagesForVision(images) : images;
 		const formData = new FormData();
-		for (const img of uploadImages) {
+		for (const img of images) {
 			formData.append('images', img);
 		}
 		formData.append('item_name', itemName);
@@ -190,9 +197,7 @@ export const vision = {
 		);
 
 		const formData = new FormData();
-		const clientCompress = getClientSideImageCompression();
-		const uploadImage = clientCompress ? await compressImageForVision(image) : image;
-		formData.append('image', uploadImage);
+		formData.append('image', image);
 		formData.append('current_item', JSON.stringify(currentItem));
 		formData.append('correction_instructions', correctionInstructions);
 

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
+import time
 import uuid
 from typing import Annotated
 
@@ -130,7 +130,7 @@ async def detect_items(
         list[UploadFile] | None, File(description="Additional images for the same item")
     ] = None,
     session_id: Annotated[str, Form()] = "",
-) -> DetectionResponse:
+) -> DetectionResponse | Response:
     """Analyze an uploaded image and detect items using LLM vision.
 
     Args:
@@ -144,11 +144,13 @@ async def detect_items(
     """
     additional_count = len(additional_images) if additional_images else 0
     task_id = uuid.uuid4().hex[:12]
-    logger.info(f"Detecting items from image: {image.filename} (+ {additional_count} additional)")
-    logger.info(f"Single item mode: {single_item}, Extra instructions: {extra_instructions}")
+    endpoint_started = time.perf_counter()
+    logger.info(f"Detecting items from image (+ {additional_count} additional)")
+    logger.info(f"Single item mode: {single_item}, extra instructions present: {bool(extra_instructions)}")
     logger.info(f"Extract extended fields: {extract_extended_fields}")
 
     # Read and validate primary image
+    read_started = time.perf_counter()
     image_bytes = await validate_file_size(image)
     logger.debug(f"Primary image size: {len(image_bytes)} bytes")
     content_type = image.content_type or "image/jpeg"
@@ -162,11 +164,12 @@ async def detect_items(
             additional_image_data.append((add_bytes, add_mime))
             logger.debug(f"Additional image: {add_img.filename}, size: {len(add_bytes)} bytes")
 
+    logger.debug(
+        f"[VISION TIMING] Input images read | duration={time.perf_counter() - read_started:.2f}s | "
+        f"primary={len(image_bytes)} bytes | additional={len(additional_image_data)}"
+    )
     logger.debug(f"Loaded {len(ctx.tags)} tags for context")
 
-    # When client-side compression is enabled, the uploaded images are already
-    # in the vision format and can be reused for Homebox attachments as-is.
-    client_side_compression = settings.client_side_image_compression
     max_dimension, jpeg_quality = settings.image_quality_params
 
     # Run AI detection and image compression in parallel
@@ -178,11 +181,6 @@ async def detect_items(
             """Compress a single image with concurrency limiting."""
             # Limit concurrent compressions to prevent CPU overload
             async with _get_compression_semaphore():
-                if client_side_compression:
-                    return CompressedImage(
-                        data=base64.b64encode(img_bytes).decode("ascii"),
-                        mime_type=_mime,
-                    )
                 base64_data, mime = await asyncio.to_thread(
                     encode_compressed_image_to_base64,
                     img_bytes,
@@ -209,11 +207,11 @@ async def detect_items(
         field_preferences=ctx.field_preferences,
         output_language=ctx.output_language,
         custom_fields=ctx.custom_fields,
-        optimize_images=not client_side_compression,
     )
     detection_task = asyncio.ensure_future(detection_coro)
     register(session_id, task_id, detection_task)
     compression_task = compress_all_images()
+    gather_started = time.perf_counter()
 
     try:
         detected, compressed_images = await asyncio.gather(detection_task, compression_task)
@@ -224,6 +222,10 @@ async def detect_items(
     finally:
         unregister(session_id, task_id)
 
+    logger.info(
+        f"[VISION TIMING] Detection + compression completed | duration={time.perf_counter() - gather_started:.2f}s | "
+        f"items={len(detected)} | compressed={len(compressed_images)}"
+    )
     logger.info(f"Detected {len(detected)} items, compressed {len(compressed_images)} images")
 
     # Build response items first
@@ -251,6 +253,7 @@ async def detect_items(
     if items_with_serials:
         logger.info(f"Checking {len(items_with_serials)} item(s) with serial numbers for duplicates")
         checker = DuplicateChecker(ctx.gateway)
+        duplicate_started = time.perf_counter()
 
         async def check_one(item: DetectedItemResponse) -> None:
             """Check a single item for duplicates and attach match if found."""
@@ -272,7 +275,15 @@ async def detect_items(
                 logger.warning(f"Duplicate check failed for serial '{item.serial_number}': {e}")
 
         await asyncio.gather(*[check_one(item) for item in items_with_serials])
+        logger.debug(
+            f"[VISION TIMING] Duplicate check completed | duration={time.perf_counter() - duplicate_started:.2f}s | "
+            f"checked={len(items_with_serials)}"
+        )
 
+    logger.info(
+        f"[VISION TIMING] /detect endpoint completed | duration={time.perf_counter() - endpoint_started:.2f}s | "
+        f"items={len(response_items)} | compressed_images={len(compressed_images)}"
+    )
     return DetectionResponse(
         items=response_items,
         compressed_images=compressed_images,
@@ -298,9 +309,8 @@ async def analyze_item_advanced(
 
     # Validate and convert images to data URIs
     validated_images = await validate_files_size(images)
-    optimize_images = not settings.client_side_image_compression
     image_data_uris = [
-        encode_image_bytes_to_data_uri(img_bytes, mime_type, optimize=optimize_images)
+        encode_image_bytes_to_data_uri(img_bytes, mime_type)
         for img_bytes, mime_type in validated_images
     ]
 
@@ -379,9 +389,7 @@ async def correct_item(
     # Read and validate image size
     image_bytes = await validate_file_size(image)
     content_type = image.content_type or "image/jpeg"
-    image_data_uri = encode_image_bytes_to_data_uri(
-        image_bytes, content_type, optimize=not settings.client_side_image_compression
-    )
+    image_data_uri = encode_image_bytes_to_data_uri(image_bytes, content_type)
 
     logger.debug(f"Loaded {len(ctx.tags)} tags for context")
 

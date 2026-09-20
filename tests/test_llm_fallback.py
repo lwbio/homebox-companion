@@ -447,6 +447,70 @@ class TestJsonCompletionWithRouter:
                 assert mock_completion.call_count == 2
 
 
+class TestVisionLatencyOptions:
+    """Tests for provider-specific low-latency vision options."""
+
+    @pytest.mark.asyncio
+    async def test_qwen_option_not_forwarded_to_fallback(self) -> None:
+        from homebox_companion.ai.llm import vision_completion
+
+        with (
+            patch("homebox_companion.ai.llm._resolve_model_for_capabilities", return_value="openai/qwen3-vl-flash"),
+            patch("homebox_companion.ai.llm.config.settings.llm_allow_unsafe_models", True),
+            patch("homebox_companion.ai.llm._qwen_vision_extra_body", return_value={"enable_thinking": False}),
+            patch("homebox_companion.core.persistent_settings.get_fallback_profile", return_value=MagicMock()),
+            patch("homebox_companion.ai.llm.json_completion", new_callable=AsyncMock) as completion,
+        ):
+            completion.return_value = {"items": []}
+            await vision_completion("system", "user", ["data:image/jpeg;base64,AA=="])
+            assert completion.await_args is not None
+            assert completion.await_args.kwargs["extra_body"] is None
+
+    def test_completion_kwargs_include_extra_body(self) -> None:
+        from homebox_companion.ai.json_completion import _build_completion_kwargs
+
+        kwargs = _build_completion_kwargs(
+            [{"role": "user", "content": "test"}],
+            "primary",
+            30,
+            extra_body={"enable_thinking": False},
+        )
+
+        assert kwargs["extra_body"] == {"enable_thinking": False}
+
+    def test_dashscope_qwen_disables_thinking(self) -> None:
+        from homebox_companion.ai.llm import _qwen_vision_extra_body
+        from homebox_companion.core.llm_utils import LLMCredentials
+
+        credentials = LLMCredentials(
+            model="openai/qwen3-vl-flash",
+            api_key="test-key",
+            api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            profile_name="test",
+        )
+        with patch(
+            "homebox_companion.core.llm_utils.resolve_llm_credentials",
+            return_value=credentials,
+        ):
+            assert _qwen_vision_extra_body(credentials.model) == {"enable_thinking": False}
+
+    def test_non_dashscope_model_is_unchanged(self) -> None:
+        from homebox_companion.ai.llm import _qwen_vision_extra_body
+        from homebox_companion.core.llm_utils import LLMCredentials
+
+        credentials = LLMCredentials(
+            model="gpt-5-mini",
+            api_key="test-key",
+            api_base=None,
+            profile_name="test",
+        )
+        with patch(
+            "homebox_companion.core.llm_utils.resolve_llm_credentials",
+            return_value=credentials,
+        ):
+            assert _qwen_vision_extra_body(credentials.model) is None
+
+
 class TestSettingsInvalidation:
     """Tests for Router invalidation when settings change."""
 

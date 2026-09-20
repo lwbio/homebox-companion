@@ -29,8 +29,6 @@ Environment Variables:
     HBC_CORS_ORIGINS: Allowed CORS origins, comma-separated or "*" for all (default: "*")
     HBC_IMAGE_QUALITY: Image quality for Homebox uploads (default: medium).
         Options: raw (original), high (2560px, 85%), medium (1920px, 75%), low (1280px, 60%)
-    HBC_CLIENT_SIDE_IMAGE_COMPRESSION: Compress vision images in the browser before upload
-        (default: false). Reduces upload bandwidth for mobile clients.
     HBC_CHAT_ENABLED: Enable the conversational assistant (default: true)
     HBC_CHAT_MAX_HISTORY: Max messages in conversation context (default: 20)
     HBC_CHAT_APPROVAL_TIMEOUT: Seconds before pending approvals expire (default: 300)
@@ -120,7 +118,6 @@ class Settings(BaseSettings):
 
     # Image processing configuration
     image_quality: ImageQuality = ImageQuality.MEDIUM
-    client_side_image_compression: bool = False
 
     # LLM request timeout (in seconds)
     llm_timeout: int = 120

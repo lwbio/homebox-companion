@@ -211,12 +211,16 @@
 
 	// Handle analysis animation completion - navigate directly to avoid CaptureButtons appearing
 	function handleAnalysisComplete() {
+		const startedAt = performance.now();
 		log.info(
-			`Analysis animation complete: status=${workflow.state.status}, images=${images.length}`
+			`[ANALYZE TIMING] animation complete handler started | status=${workflow.state.status}, images=${images.length}`
 		);
 		analysisAnimationComplete = true;
 		// Clear progress after animation finishes
 		workflow.clearAnalysisProgress();
+		log.debug(
+			`[ANALYZE TIMING] analysisAnimationComplete=true + progress cleared | duration=${((performance.now() - startedAt) / 1000).toFixed(2)}s`
+		);
 
 		// Navigate immediately to prevent UI shift from buttons reappearing
 		if (workflow.state.status === 'reviewing') {
@@ -446,8 +450,8 @@
 	// ==========================================================================
 
 	async function startAnalysis() {
-		// Entry logging
-		log.info('Analyze button clicked');
+		const flowStartedAt = performance.now();
+		log.info('[ANALYZE TIMING] Analyze button clicked | t=0.00s');
 
 		// Prevent double-clicks
 		if (isStartingAnalysis || isAnalyzing) {
@@ -456,7 +460,9 @@
 		}
 
 		isStartingAnalysis = true;
-		log.debug('Starting analysis flow...');
+		log.debug(
+			`[ANALYZE TIMING] isStartingAnalysis=true (UI locked) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
+		);
 
 		try {
 			// Check token validity before starting analysis
@@ -467,7 +473,9 @@
 				markSessionExpired();
 				return;
 			}
-			log.debug('Auth check passed');
+			log.debug(
+				`[ANALYZE TIMING] auth check passed | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
+			);
 
 			// Before workflow call
 			log.info(
@@ -480,9 +488,11 @@
 			setTimeout(() => {
 				window.scrollTo({ top: 0, behavior: 'smooth' });
 			}, 100);
+
+			const workflowStartedAt = performance.now();
 			await workflow.startAnalysis();
 			log.info(
-				`Workflow.startAnalysis() completed: status=${workflow.state.status}, images=${workflow.state.images.length}, error=${workflow.state.error ?? 'none'}`
+				`[ANALYZE TIMING] workflow.startAnalysis() ended | duration=${((performance.now() - workflowStartedAt) / 1000).toFixed(2)}s | status=${workflow.state.status}, error=${workflow.state.error ?? 'none'}`
 			);
 		} catch (error) {
 			// Error logging
@@ -491,7 +501,7 @@
 		} finally {
 			isStartingAnalysis = false;
 			log.debug(
-				`Analysis button flow finished: status=${workflow.state.status}, images=${workflow.state.images.length}`
+				`[ANALYZE TIMING] isStartingAnalysis=false (UI unlocked) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s | status=${workflow.state.status}, images=${workflow.state.images.length}`
 			);
 		}
 	}

@@ -12,6 +12,8 @@ import { vision, fieldPreferences } from '$lib/api/index';
 import { tagStore } from '$lib/stores/tags.svelte';
 import { workflowLogger as log } from '$lib/utils/logger';
 import { createUuid } from '$lib/utils/uuid';
+import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakeLock';
+import { t } from '$lib/i18n';
 import type { CapturedImage, ReviewItem, Progress, ImageAnalysisStatus } from '$lib/types';
 
 // =============================================================================
@@ -25,6 +27,9 @@ import type { CapturedImage, ReviewItem, Progress, ImageAnalysisStatus } from '$
  * - 30 concurrent keeps UI responsive while maximizing throughput
  */
 const MAX_CONCURRENT_REQUESTS = 30;
+
+/** How long (ms) to wait before showing a "still working" message to the user. */
+const SLOW_NETWORK_THRESHOLD_MS = 15_000;
 
 /**
  * Process items with limited concurrency using a worker pool pattern.
@@ -92,6 +97,12 @@ export class AnalysisService {
 	/** Session ID for backend task cancellation — scoped per analyze() call */
 	private sessionId: string | null = null;
 
+	/** Whether the slow-network hint has been shown for the current batch. */
+	private slowNetworkNotified = false;
+
+	/** Timer that flips the slow-network hint after the threshold elapses. */
+	private slowNetworkTimer: ReturnType<typeof setTimeout> | null = null;
+
 	/** Cache for default tag (loaded once per session) */
 	private defaultTagId: string | null = null;
 	private defaultTagLoaded = false;
@@ -102,13 +113,24 @@ export class AnalysisService {
 
 	/** Load default tag ID if not already loaded */
 	async loadDefaultTag(): Promise<void> {
-		if (this.defaultTagLoaded) return;
+		if (this.defaultTagLoaded) {
+			log.debug('[ANALYSIS TIMING] loadDefaultTag: already loaded, skipping');
+			return;
+		}
+		const startedAt = performance.now();
 		try {
 			const prefs = await fieldPreferences.get();
+			log.info(
+				`[ANALYSIS TIMING] loadDefaultTag completed | duration=${((performance.now() - startedAt) / 1000).toFixed(2)}s`
+			);
 			this.defaultTagId = prefs.default_tag_id;
 			this.defaultTagLoaded = true; // Only mark as loaded on success
-		} catch {
+		} catch (error) {
 			// Silently ignore - will retry on next analysis
+			log.warn(
+				`[ANALYSIS TIMING] loadDefaultTag failed | duration=${((performance.now() - startedAt) / 1000).toFixed(2)}s`,
+				error
+			);
 		}
 	}
 
@@ -127,16 +149,19 @@ export class AnalysisService {
 		const allDetectedItems: ReviewItem[] = [];
 		let completedCount = 0;
 		const signal = this.abortController?.signal;
+		const batchStartedAt = performance.now();
 
 		// Process images with limited concurrency to prevent overwhelming browser/server
 		log.debug(
 			`Processing ${images.length} images with max ${MAX_CONCURRENT_REQUESTS} concurrent requests`
 		);
 
+		this.startSlowNetworkTimer(images.length);
 		const results = await mapWithConcurrency(
 			images,
 			async (image, subsetIndex) => {
 				const originalIndex = indexMapper(subsetIndex);
+				const detectionStartedAt = performance.now();
 
 				// Check if cancelled before starting
 				if (signal?.aborted) {
@@ -166,12 +191,15 @@ export class AnalysisService {
 					log.debug(
 						`Detection complete for image ${originalIndex + 1}, found ${response.items.length} item(s)`
 					);
+					log.info(
+						`[VISION TIMING] Image ${originalIndex + 1} detection completed | duration=${((performance.now() - detectionStartedAt) / 1000).toFixed(2)}s | items=${response.items.length}`
+					);
 
 					completedCount++;
 					this.progress = {
 						current: completedCount,
 						total: images.length,
-						message: images.length === 1 ? 'Analyzing item...' : 'Analyzing items...',
+						message: this.analyzingMessage(images.length),
 					};
 
 					// Mark this image as success
@@ -188,6 +216,9 @@ export class AnalysisService {
 					// Re-throw abort errors to be handled at the top level
 					if (error instanceof Error && error.name === 'AbortError') {
 						log.debug(`Analysis aborted for image ${originalIndex + 1}`);
+						log.info(
+							`[VISION TIMING] Image ${originalIndex + 1} detection cancelled | duration=${((performance.now() - detectionStartedAt) / 1000).toFixed(2)}s`
+						);
 						throw error;
 					}
 
@@ -195,13 +226,16 @@ export class AnalysisService {
 					this.progress = {
 						current: completedCount,
 						total: images.length,
-						message: images.length === 1 ? 'Analyzing item...' : 'Analyzing items...',
+						message: this.analyzingMessage(images.length),
 					};
 
 					// Mark this image as failed
 					this.imageStatuses = { ...this.imageStatuses, [originalIndex]: 'failed' };
 
 					log.error(`Failed to analyze image ${originalIndex + 1}`, error);
+					log.warn(
+						`[VISION TIMING] Image ${originalIndex + 1} detection failed | duration=${((performance.now() - detectionStartedAt) / 1000).toFixed(2)}s`
+					);
 					return {
 						success: false as const,
 						imageIndex: originalIndex,
@@ -212,8 +246,12 @@ export class AnalysisService {
 			},
 			MAX_CONCURRENT_REQUESTS
 		);
+		this.clearSlowNetworkTimer();
 
 		log.debug(`All detections complete. Processing ${results.length} result(s)...`);
+		log.info(
+			`[VISION TIMING] Detection batch completed | duration=${((performance.now() - batchStartedAt) / 1000).toFixed(2)}s | images=${images.length}`
+		);
 
 		// Check if cancelled
 		if (this.abortController?.signal.aborted) {
@@ -328,15 +366,25 @@ export class AnalysisService {
 		}
 
 		log.debug(`Starting analysis for ${images.length} image(s)`);
+		const analyzeStartedAt = performance.now();
 
 		// Initialize analysis state
 		this.abortController = new AbortController();
 		this.sessionId = createUuid();
+		this.slowNetworkNotified = false;
 		this.progress = {
 			current: 0,
 			total: images.length,
 			message: 'Loading preferences...',
 		};
+
+		// Keep the screen awake during detection so mobile OS throttling does
+		// not delay the pending vision request (see wakeLock.ts).
+		const wakeLockStartedAt = performance.now();
+		await acquireWakeLock();
+		log.debug(
+			`[ANALYZE TIMING] wake lock acquired | duration=${((performance.now() - wakeLockStartedAt) / 1000).toFixed(2)}s`
+		);
 
 		// Initialize all images as pending
 		const initialStatuses: Record<number, ImageAnalysisStatus> = {};
@@ -344,6 +392,9 @@ export class AnalysisService {
 			initialStatuses[i] = 'pending';
 		}
 		this.imageStatuses = initialStatuses;
+		log.debug(
+			`[ANALYZE TIMING] imageStatuses initialized to pending | t=${((performance.now() - analyzeStartedAt) / 1000).toFixed(2)}s`
+		);
 
 		try {
 			// Load default tag first
@@ -353,11 +404,16 @@ export class AnalysisService {
 			this.progress = {
 				current: 0,
 				total: images.length,
-				message: images.length === 1 ? 'Analyzing item...' : 'Analyzing items...',
+				message: this.analyzingMessage(images.length),
 			};
 
 			// Process all images (identity mapping: index -> index)
-			return await this.processImages(images);
+			const processStartedAt = performance.now();
+			const result = await this.processImages(images);
+			log.info(
+				`[ANALYZE TIMING] processImages() ended | duration=${((performance.now() - processStartedAt) / 1000).toFixed(2)}s | success=${result.success} | items=${result.items.length}`
+			);
+			return result;
 		} catch (error) {
 			// Don't set error if cancelled
 			if (
@@ -377,6 +433,11 @@ export class AnalysisService {
 			};
 		} finally {
 			this.abortController = null;
+			this.clearSlowNetworkTimer();
+			void releaseWakeLock();
+			log.debug(
+				`[ANALYZE TIMING] analyze() finally (wake lock released) | total=${((performance.now() - analyzeStartedAt) / 1000).toFixed(2)}s`
+			);
 		}
 	}
 
@@ -399,6 +460,40 @@ export class AnalysisService {
 	clearProgress(): void {
 		this.progress = null;
 		this.imageStatuses = {};
+	}
+
+	/** Start the slow-network hint timer for a detection batch. */
+	private startSlowNetworkTimer(imageCount: number): void {
+		this.slowNetworkNotified = false;
+		if (this.slowNetworkTimer) {
+			clearTimeout(this.slowNetworkTimer);
+			this.slowNetworkTimer = null;
+		}
+		this.slowNetworkTimer = setTimeout(() => {
+			this.slowNetworkTimer = null;
+			if (this.abortController && !this.abortController.signal.aborted) {
+				this.slowNetworkNotified = true;
+				this.progress = {
+					current: this.progress?.current ?? 0,
+					total: imageCount,
+					message: t('capture.stillWorking'),
+				};
+			}
+		}, SLOW_NETWORK_THRESHOLD_MS);
+	}
+
+	/** Cancel the slow-network hint timer. */
+	private clearSlowNetworkTimer(): void {
+		if (this.slowNetworkTimer) {
+			clearTimeout(this.slowNetworkTimer);
+			this.slowNetworkTimer = null;
+		}
+	}
+
+	/** Current progress message, honoring the slow-network hint once shown. */
+	private analyzingMessage(imageCount: number): string {
+		if (this.slowNetworkNotified) return t('capture.stillWorking');
+		return imageCount === 1 ? 'Analyzing item...' : 'Analyzing items...';
 	}
 
 	/**
@@ -461,11 +556,15 @@ export class AnalysisService {
 		// Initialize analysis state
 		this.abortController = new AbortController();
 		this.sessionId = createUuid();
+		this.slowNetworkNotified = false;
 		this.progress = {
 			current: 0,
 			total: images.length,
 			message: 'Loading preferences...',
 		};
+
+		// Keep the screen awake during detection (see analyze()).
+		await acquireWakeLock();
 
 		// Reset statuses for images being retried
 		const updatedStatuses = { ...this.imageStatuses };
@@ -482,7 +581,7 @@ export class AnalysisService {
 			this.progress = {
 				current: 0,
 				total: images.length,
-				message: images.length === 1 ? 'Analyzing item...' : 'Analyzing items...',
+				message: this.analyzingMessage(images.length),
 			};
 
 			// Process subset with index mapping (subsetIndex -> originalIndex)
@@ -506,6 +605,8 @@ export class AnalysisService {
 			};
 		} finally {
 			this.abortController = null;
+			this.clearSlowNetworkTimer();
+			void releaseWakeLock();
 		}
 	}
 

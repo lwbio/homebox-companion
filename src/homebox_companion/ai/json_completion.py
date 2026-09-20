@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from typing import Any
 
 from loguru import logger
@@ -170,6 +171,12 @@ def _parse_json_response(
     except json.JSONDecodeError as e:
         return {}, f"JSON parse error: {e.msg} at position {e.pos}"
 
+    # Some models return the bare items array instead of {"items": [...]}.
+    # Normalize deterministically instead of triggering a repair round-trip.
+    if isinstance(parsed, list) and expected_keys == ["items"]:
+        logger.debug("LLM returned a top-level list; wrapping into {'items': [...]}")
+        return {"items": parsed}, None
+
     if not isinstance(parsed, dict):
         return {}, f"Expected JSON object, got {type(parsed).__name__}"
 
@@ -186,6 +193,7 @@ def _build_completion_kwargs(
     model_name: str,
     timeout: float,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs for Router.acompletion calls.
 
@@ -196,6 +204,7 @@ def _build_completion_kwargs(
         response_format: Optional format hint — a dict like
             ``{"type": "json_object"}``, a Pydantic ``BaseModel`` class
             for structured output, or None.
+        extra_body: Optional provider-specific request parameters.
 
     Returns:
         Dict of kwargs for acompletion.
@@ -207,6 +216,8 @@ def _build_completion_kwargs(
     }
     if response_format:
         kwargs["response_format"] = response_format
+    if extra_body:
+        kwargs["extra_body"] = extra_body
     return kwargs
 
 
@@ -216,6 +227,7 @@ async def json_completion(
     response_format: dict[str, Any] | type[BaseModel] | None = None,
     expected_keys: list[str] | None = None,
     timeout: float | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Make an LLM completion request expecting JSON output.
 
@@ -229,6 +241,8 @@ async def json_completion(
             for structured output (json_schema), or None.
         expected_keys: Keys to check in JSON response (triggers repair if missing).
         timeout: Optional timeout override (uses config default if None).
+        extra_body: Optional provider-specific request parameters. These are
+            forwarded to both the initial request and JSON repair request.
 
     Returns:
         Parsed JSON response as a dictionary.
@@ -242,7 +256,13 @@ async def json_completion(
     effective_timeout = timeout or config.settings.llm_timeout
 
     # Build kwargs for Router call
-    kwargs = _build_completion_kwargs(messages, model_name, effective_timeout, response_format)
+    kwargs = _build_completion_kwargs(
+        messages,
+        model_name,
+        effective_timeout,
+        response_format,
+        extra_body,
+    )
 
     # Rate limiting
     await _acquire_rate_limit_if_enabled(messages)
@@ -251,11 +271,15 @@ async def json_completion(
     logger.trace(f">>> PROMPT SENT TO LLM ({model_name}) >>>{_format_messages_for_logging(messages)}\n{'=' * 60}")
 
     # First attempt via Router
+    router_started = time.perf_counter()
     try:
         completion = await router.acompletion(**kwargs)
     except Exception as e:
         logger.exception(f"Router call failed: {e}")
         raise LLMServiceError(f"LLM request failed: {e}") from e
+
+    router_duration = time.perf_counter() - router_started
+    logger.debug(f"[VISION TIMING] Router acompletion returned | duration={router_duration:.2f}s | model={model_name}")
 
     if not completion.choices:
         raise LLMServiceError("LLM returned empty response (no choices)")
@@ -267,7 +291,6 @@ async def json_completion(
 
     # Get actual model used (for logging)
     actual_model = getattr(completion, "_hidden_params", {}).get("model", model_name)
-    logger.trace(f"<<< RESPONSE FROM LLM ({actual_model}) <<<\n{'=' * 60}\n{raw_content}\n{'=' * 60}")
 
     # Log token usage
     if completion.usage:
@@ -279,8 +302,15 @@ async def json_completion(
     else:
         logger.debug(f"LLM response received ({len(raw_content)} chars)")
 
+    logger.trace(f"LLM response content ({actual_model}): {raw_content!r}")
+
     # Parse and validate
+    parse_started = time.perf_counter()
     parsed, error = _parse_json_response(raw_content, expected_keys)
+    logger.debug(
+        f"[VISION TIMING] JSON parsed | duration={time.perf_counter() - parse_started:.2f}s | "
+        f"valid={'yes' if error is None else 'no'}"
+    )
     if error is None:
         return parsed
 
@@ -302,7 +332,13 @@ async def json_completion(
     logger.debug("Sending repair request to Router...")
 
     try:
-        repair_kwargs = _build_completion_kwargs(repair_messages, model_name, effective_timeout, response_format)
+        repair_kwargs = _build_completion_kwargs(
+            repair_messages,
+            model_name,
+            effective_timeout,
+            response_format,
+            extra_body,
+        )
         repair_completion = await router.acompletion(**repair_kwargs)
     except Exception as e:
         logger.error(f"Repair request failed: {e}")

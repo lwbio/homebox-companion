@@ -18,6 +18,8 @@
  * Log level is synced from backend config at app startup.
  */
 
+import { enqueueLog } from './logTransport';
+
 type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CRITICAL';
 
 /**
@@ -201,6 +203,16 @@ export function createLogger(options: LoggerOptions) {
 			message,
 			error: errorStr,
 		});
+
+		// Only forward fixed-format timing diagnostics. Other messages and error
+		// stacks can contain item names, instructions, or credentials.
+		if (
+			/^\[(?:ANALYZE|PERSIST|VISION) TIMING\] [\w ()]+ \| (?:duration|t|total)=\d+(?:\.\d+)?s$/.test(
+				message
+			)
+		) {
+			enqueueLog({ timestamp, level, module: prefix, message });
+		}
 
 		// Output to console (single log level controls both buffer and console)
 		switch (level) {
