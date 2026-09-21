@@ -194,7 +194,8 @@ export type ItemSubmissionStatus =
 	| 'creating'
 	| 'success'
 	| 'partial_success'
-	| 'failed';
+	| 'failed'
+	| 'unknown';
 
 /** Status of individual image analysis */
 export type ImageAnalysisStatus = 'pending' | 'analyzing' | 'success' | 'failed';

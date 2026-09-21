@@ -237,6 +237,8 @@ export class ReviewService {
 			purchase_price: item.purchase_price,
 			purchase_from: item.purchase_from,
 			notes: item.notes,
+			asset_id: item.asset_id,
+			custom_fields: item.custom_fields,
 			sourceImageIndex: item.sourceImageIndex,
 			additionalImages: item.additionalImages,
 			originalFile: item.originalFile,

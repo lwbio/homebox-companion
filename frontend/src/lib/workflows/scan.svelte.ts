@@ -31,6 +31,7 @@ import type {
 } from '$lib/types';
 import {
 	type StoredSession,
+	type StoredReviewItem,
 	serializeImage,
 	serializeReviewItem,
 	serializeConfirmedItem,
@@ -57,6 +58,15 @@ interface CaptureContext {
 	locationPath: string;
 	parentItemId: string | null;
 	parentItemName: string | null;
+}
+
+function unwrapStoredReviewItem(item: StoredReviewItem): StoredReviewItem {
+	const { originalBlob, additionalBlobs } = item;
+	return {
+		...JSON.parse(JSON.stringify(item)),
+		originalBlob,
+		additionalBlobs: additionalBlobs ? Array.from(additionalBlobs) : undefined,
+	};
 }
 
 // =============================================================================
@@ -116,6 +126,8 @@ class ScanWorkflow {
 	private _persistedCaptureRevision = -1;
 	/** Capture revision currently being serialized, if a write is active. */
 	private _activePersistCaptureRevision: number | null = null;
+	private _lastPersistSucceeded = true;
+	private _recoverPromise: Promise<boolean> | null = null;
 
 	/** Flag to skip the initial effect run (avoids persist on construction) */
 	private _isFirstEffectRun = true;
@@ -517,12 +529,14 @@ class ScanWorkflow {
 
 	/** Add a captured image */
 	addImage(image: CapturedImage): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.addImage(image);
 	}
 
 	/** Remove an image by index */
 	removeImage(index: number): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.removeImage(index);
 	}
@@ -532,24 +546,28 @@ class ScanWorkflow {
 		index: number,
 		options: Partial<Pick<CapturedImage, 'separateItems' | 'extraInstructions' | 'assetId'>>
 	): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.updateImageOptions(index, options);
 	}
 
 	/** Add additional images to a captured image */
 	addAdditionalImages(imageIndex: number, files: File[], dataUrls: string[]): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.addAdditionalImages(imageIndex, files, dataUrls);
 	}
 
 	/** Remove an additional image */
 	removeAdditionalImage(imageIndex: number, additionalIndex: number): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.removeAdditionalImage(imageIndex, additionalIndex);
 	}
 
 	/** Clear all captured images */
 	clearImages(): void {
+		if (this._status !== 'capturing') return;
 		this._captureRevision++;
 		this.captureService.clear();
 	}
@@ -590,7 +608,10 @@ class ScanWorkflow {
 			log.debug(
 				`[ANALYZE TIMING] pre-analysis persist started (status=${this._status}) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
 			);
-			await this.persistAsync();
+			if (!(await this.persistAsync())) {
+				this._error = 'Could not save this scan. Free storage space and try again.';
+				return;
+			}
 			log.info(
 				`[ANALYSIS STARTUP] Capture persistence ready | duration=${((performance.now() - persistenceStartedAt) / 1000).toFixed(2)}s | mode=${needsCapturePersist ? 'saved' : 'waited'}`
 			);
@@ -653,7 +674,10 @@ class ScanWorkflow {
 			log.debug(
 				`[ANALYZE TIMING] post-analysis persist started (status=${this._status}) | t=${((performance.now() - flowStartedAt) / 1000).toFixed(2)}s`
 			);
-			await this.persistAsync();
+			if (!(await this.persistAsync())) {
+				this._status = 'capturing';
+				this._error = 'Analysis completed but could not be saved. Free storage space and retry.';
+			}
 			log.info(
 				`[ANALYZE TIMING] post-analysis persist ended | duration=${((performance.now() - postPersistStartedAt) / 1000).toFixed(2)}s`
 			);
@@ -728,7 +752,10 @@ class ScanWorkflow {
 
 		// Persist after retry completes
 		// IMPORTANT: Await persist to ensure data is saved before user can close tab
-		await this.persistAsync();
+		if (!(await this.persistAsync())) {
+			this._status = 'capturing';
+			this._error = 'Analysis completed but could not be saved. Free storage space and retry.';
+		}
 	}
 
 	/** Continue to review with only successfully analyzed items */
@@ -753,7 +780,10 @@ class ScanWorkflow {
 		this._error = null;
 
 		// Persist immediately after transitioning to reviewing state
-		await this.persistAsync();
+		if (!(await this.persistAsync())) {
+			this._status = 'partial_analysis';
+			this._error = 'Could not save this scan. Free storage space and try again.';
+		}
 	}
 
 	/** Remove failed images and continue with successful ones */
@@ -825,7 +855,7 @@ class ScanWorkflow {
 			} else {
 				this._status = 'capturing';
 			}
-			this.analysisService.clearProgress();
+			this.analysisService.clearProgress(this._status === 'partial_analysis');
 
 			// Persist after cancellation to save the current state
 			await this.persistAsync();
@@ -907,10 +937,17 @@ class ScanWorkflow {
 			this._error = 'Please confirm at least one item';
 			return;
 		}
+		if (!(await this.persistAsync())) {
+			this._error = 'Could not save this scan. Free storage space and try again.';
+			return;
+		}
 		this._status = 'confirming';
 
 		// Persist after moving to confirmation state
-		await this.persistAsync();
+		if (!(await this.persistAsync())) {
+			this._status = 'reviewing';
+			this._error = 'Could not save this scan. Free storage space and try again.';
+		}
 	}
 
 	/** Return to capture mode from review */
@@ -1002,6 +1039,7 @@ class ScanWorkflow {
 			throw new Error('Cannot submit without a verified Homebox context and collection');
 		}
 		const items = this.reviewService.confirmedItems;
+		const resumeExisting = this._status === 'submitting';
 
 		if (items.length === 0) {
 			this._error = 'No items to submit';
@@ -1035,7 +1073,13 @@ class ScanWorkflow {
 			items,
 			this._locationId,
 			this._parentItemId,
-			options
+			{
+				...options,
+				resumeExisting,
+				onCheckpoint: async () => {
+					if (!(await this.persistAsync())) throw new Error('Could not save submission progress');
+				},
+			}
 		);
 		if (generation !== this.contextGeneration) return result;
 
@@ -1045,7 +1089,14 @@ class ScanWorkflow {
 		}
 
 		// Handle results
-		if (result.failCount > 0 && result.successCount === 0 && result.partialSuccessCount === 0) {
+		if (this.submissionService.hasUncertainItems()) {
+			this._error = 'Some item creation results are unknown. Verify them in Homebox.';
+			this._status = 'confirming';
+		} else if (
+			result.failCount > 0 &&
+			result.successCount === 0 &&
+			result.partialSuccessCount === 0
+		) {
 			this._error = 'All items failed to create';
 			this._status = 'confirming';
 		} else if (result.failCount > 0) {
@@ -1112,7 +1163,10 @@ class ScanWorkflow {
 		const result = await this.submissionService.retryFailed(
 			items,
 			this._locationId,
-			this._parentItemId
+			this._parentItemId,
+			async () => {
+				if (!(await this.persistAsync())) throw new Error('Could not save submission progress');
+			}
 		);
 		if (generation !== this.contextGeneration) return result;
 
@@ -1139,6 +1193,31 @@ class ScanWorkflow {
 		return this.submissionService.hasFailedItems();
 	}
 
+	/** Check whether recovery found a create request with an unknown outcome. */
+	hasUncertainItems(): boolean {
+		return this.submissionService.hasUncertainItems();
+	}
+
+	hasPendingItems(): boolean {
+		return this.submissionService.hasPendingItems();
+	}
+
+	hasPartialItems(): boolean {
+		return this.submissionService.hasPartialItems();
+	}
+
+	/** Finish a partial submission without replaying failed or uncertain requests. */
+	async completeWithSuccessfulItems(): Promise<void> {
+		this.submissionService.saveResult(
+			this.reviewService.confirmedItems,
+			this._locationName,
+			this._locationId
+		);
+		this._status = 'complete';
+		this._error = null;
+		await this.clearPersistedSession();
+	}
+
 	/** Check if all items were successfully submitted */
 	allItemsSuccessful(): boolean {
 		return this.submissionService.allItemsSuccessful();
@@ -1154,10 +1233,10 @@ class ScanWorkflow {
 	 * Use this when the data MUST be saved before continuing
 	 * (e.g., after analysis completes before navigation can occur).
 	 */
-	async persistAsync(): Promise<void> {
+	async persistAsync(): Promise<boolean> {
 		// Don't persist terminal states
 		if (this._status === 'idle' || this._status === 'complete') {
-			return;
+			return true;
 		}
 
 		// Let effects caused by the state transition that requested this save run
@@ -1186,6 +1265,7 @@ class ScanWorkflow {
 			// State changes during the explicit save may have scheduled a duplicate write.
 			this.cancelScheduledPersist();
 		}
+		return this._lastPersistSucceeded;
 	}
 
 	/**
@@ -1199,6 +1279,7 @@ class ScanWorkflow {
 		const persistGeneration = this._persistGeneration;
 		const captureRevision = this._captureRevision;
 		this._activePersistCaptureRevision = captureRevision;
+		this._lastPersistSucceeded = false;
 
 		try {
 			// Step 1: Serialize images (convert File objects to base64)
@@ -1212,11 +1293,16 @@ class ScanWorkflow {
 			log.debug(
 				`_doPersist: Serializing ${this.reviewService.detectedItems.length} detected, ${this.reviewService.confirmedItems.length} confirmed items...`
 			);
-			const detectedItems = JSON.parse(
-				JSON.stringify(this.reviewService.detectedItems.map(serializeReviewItem))
+			const detectedItems = this.reviewService.detectedItems.map((item) =>
+				unwrapStoredReviewItem(
+					serializeReviewItem(item, this.captureService.images[item.sourceImageIndex])
+				)
 			);
-			const confirmedItems = JSON.parse(
-				JSON.stringify(this.reviewService.confirmedItems.map(serializeConfirmedItem))
+			const confirmedItems = this.reviewService.confirmedItems.map(
+				(item) =>
+					unwrapStoredReviewItem(
+						serializeConfirmedItem(item, this.captureService.images[item.sourceImageIndex])
+					) as ReturnType<typeof serializeConfirmedItem>
 			);
 			log.debug('_doPersist: Review items serialized successfully');
 
@@ -1268,6 +1354,7 @@ class ScanWorkflow {
 			}
 			const saved = await sessionPersistence.save(session, scope);
 			if (saved && persistGeneration === this._persistGeneration) {
+				this._lastPersistSucceeded = true;
 				this._persistedCaptureRevision = captureRevision;
 				log.debug(
 					`_doPersist: SUCCESS - status=${this._status}, images=${images.length}, detected=${detectedItems.length}, confirmed=${confirmedItems.length}`
@@ -1295,6 +1382,14 @@ class ScanWorkflow {
 	 * Returns true if recovery was successful.
 	 */
 	async recover(): Promise<boolean> {
+		if (this._recoverPromise) return this._recoverPromise;
+		this._recoverPromise = this.recoverOnce().finally(() => {
+			this._recoverPromise = null;
+		});
+		return this._recoverPromise;
+	}
+
+	private async recoverOnce(): Promise<boolean> {
 		const scope = sessionPersistence.captureSessionScope();
 		const generation = this.contextGeneration;
 		if (!scope) return false;
@@ -1317,18 +1412,21 @@ class ScanWorkflow {
 			// Deserialize images (convert base64 back to File objects)
 			const images = await Promise.all(session.images.map(deserializeImage));
 			if (generation !== this.contextGeneration) return false;
+			this.captureService.clear();
 			this.captureService.images = images;
 
 			// Deserialize review items
 			if (session.detectedItems.length > 0) {
-				const detectedItems = await Promise.all(session.detectedItems.map(deserializeReviewItem));
+				const detectedItems = await Promise.all(
+					session.detectedItems.map((item) => deserializeReviewItem(item, images))
+				);
 				if (generation !== this.contextGeneration) return false;
 				this.reviewService.setDetectedItems(detectedItems);
 			}
 
 			if (session.confirmedItems.length > 0) {
 				const confirmedItems = await Promise.all(
-					session.confirmedItems.map(deserializeConfirmedItem)
+					session.confirmedItems.map((item) => deserializeConfirmedItem(item, images))
 				);
 				if (generation !== this.contextGeneration) return false;
 				// Restore confirmed items directly (not via confirmCurrentItem which affects navigation)
@@ -1471,6 +1569,12 @@ class ScanWorkflow {
 	async clearPersistedSession(): Promise<void> {
 		const scope = sessionPersistence.captureSessionScope();
 		if (scope) await sessionPersistence.clear(scope);
+	}
+
+	/** Discard every recovery source, including the lightweight camera context. */
+	async discardRecovery(): Promise<void> {
+		await this.clearPersistedSession();
+		this.clearCaptureContext();
 	}
 
 	// =========================================================================

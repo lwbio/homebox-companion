@@ -505,7 +505,7 @@
 	}
 
 	async function handleDismissRecovery() {
-		await scanWorkflow.clearPersistedSession();
+		await scanWorkflow.discardRecovery();
 		hasRecovery = false;
 		recoverySummary = null;
 		showToast(t('location.success.sessionCleared'), 'info');

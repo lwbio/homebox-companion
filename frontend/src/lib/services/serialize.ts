@@ -52,6 +52,13 @@ export interface StoredImage {
 /** Serializable version of ReviewItem */
 export interface StoredReviewItem extends ItemCore, ItemExtended {
 	sourceImageIndex: number;
+	custom_fields?: Record<string, string> | null;
+	/** Present when review changed the source image set, including removing all images. */
+	imagesEdited?: boolean;
+	originalBlob?: Blob;
+	additionalBlobs?: Blob[];
+	additionalFilenames?: string[];
+	additionalMimeTypes?: string[];
 	/** Original image filename for reconstruction */
 	originalFilename?: string;
 	originalMimeType?: string;
@@ -218,7 +225,22 @@ export function serializeImage(img: CapturedImage): StoredImage {
  * Serialize a ReviewItem to StoredReviewItem.
  * Strips out File objects (we rely on compressedDataUrl instead).
  */
-export function serializeReviewItem(item: ReviewItem): StoredReviewItem {
+
+function sameFiles(left: readonly File[] | undefined, right: readonly File[] | undefined): boolean {
+	const a = left ?? [];
+	const b = right ?? [];
+	return a.length === b.length && a.every((file, index) => file === b[index]);
+}
+
+export function serializeReviewItem(
+	item: ReviewItem,
+	sourceImage?: CapturedImage
+): StoredReviewItem {
+	const imagesEdited = sourceImage
+		? item.originalFile !== sourceImage.file ||
+			!sameFiles(item.additionalImages, sourceImage.additionalFiles)
+		: false;
+	const editedAdditional = imagesEdited ? (item.additionalImages ?? []) : [];
 	return {
 		// ItemCore fields
 		name: item.name,
@@ -233,6 +255,12 @@ export function serializeReviewItem(item: ReviewItem): StoredReviewItem {
 		purchase_from: item.purchase_from,
 		notes: item.notes,
 		asset_id: item.asset_id,
+		custom_fields: item.custom_fields,
+		imagesEdited: imagesEdited || undefined,
+		originalBlob: imagesEdited ? item.originalFile : undefined,
+		additionalBlobs: imagesEdited ? editedAdditional : undefined,
+		additionalFilenames: imagesEdited ? editedAdditional.map((file) => file.name) : undefined,
+		additionalMimeTypes: imagesEdited ? editedAdditional.map((file) => file.type) : undefined,
 		// ReviewItem-specific fields
 		sourceImageIndex: item.sourceImageIndex,
 		originalFilename: item.originalFile?.name,
@@ -248,9 +276,12 @@ export function serializeReviewItem(item: ReviewItem): StoredReviewItem {
 /**
  * Serialize a ConfirmedItem to StoredConfirmedItem.
  */
-export function serializeConfirmedItem(item: ConfirmedItem): StoredConfirmedItem {
+export function serializeConfirmedItem(
+	item: ConfirmedItem,
+	sourceImage?: CapturedImage
+): StoredConfirmedItem {
 	return {
-		...serializeReviewItem(item),
+		...serializeReviewItem(item, sourceImage),
 		confirmed: true,
 	};
 }
@@ -310,16 +341,37 @@ export async function deserializeImage(stored: StoredImage): Promise<CapturedIma
  * Deserialize a StoredReviewItem back to ReviewItem.
  * Reconstructs File objects from compressedDataUrl if available.
  */
-export async function deserializeReviewItem(stored: StoredReviewItem): Promise<ReviewItem> {
-	// Reconstruct originalFile from compressedDataUrl if we have it
-	let originalFile: File | undefined;
-	if (stored.compressedDataUrl && stored.originalFilename) {
+export async function deserializeReviewItem(
+	stored: StoredReviewItem,
+	images?: readonly CapturedImage[]
+): Promise<ReviewItem> {
+	const sourceImage = images?.[stored.sourceImageIndex];
+
+	// Prefer the restored capture files so attachments retain their original quality.
+	let originalFile: File | undefined = stored.imagesEdited
+		? stored.originalBlob
+			? new File([stored.originalBlob], stored.originalFilename || 'image.jpg', {
+					type: stored.originalMimeType || stored.originalBlob.type,
+				})
+			: undefined
+		: sourceImage?.file;
+	if (
+		!stored.imagesEdited &&
+		!originalFile &&
+		stored.compressedDataUrl &&
+		stored.originalFilename
+	) {
 		originalFile = await dataUrlToFile(
 			stored.compressedDataUrl,
 			stored.originalFilename,
 			stored.originalMimeType
 		);
-	} else if (stored.compressedDataUrl && !stored.originalFilename) {
+	} else if (
+		!stored.imagesEdited &&
+		!originalFile &&
+		stored.compressedDataUrl &&
+		!stored.originalFilename
+	) {
 		// Log warning when we have image data but no filename to reconstruct with
 		console.warn(
 			'[serialize] Cannot reconstruct originalFile: compressedDataUrl exists but originalFilename is missing',
@@ -328,8 +380,20 @@ export async function deserializeReviewItem(stored: StoredReviewItem): Promise<R
 	}
 
 	// Reconstruct additionalImages from compressedAdditionalDataUrls
-	let additionalImages: File[] | undefined;
-	if (stored.compressedAdditionalDataUrls && stored.compressedAdditionalDataUrls.length > 0) {
+	let additionalImages: File[] | undefined = stored.imagesEdited
+		? stored.additionalBlobs?.map(
+				(blob, index) =>
+					new File([blob], stored.additionalFilenames?.[index] || `additional_${index}.jpg`, {
+						type: stored.additionalMimeTypes?.[index] || blob.type,
+					})
+			)
+		: sourceImage?.additionalFiles;
+	if (
+		!stored.imagesEdited &&
+		!additionalImages &&
+		stored.compressedAdditionalDataUrls &&
+		stored.compressedAdditionalDataUrls.length > 0
+	) {
 		additionalImages = await Promise.all(
 			stored.compressedAdditionalDataUrls.map((url, i) =>
 				dataUrlToFile(url, `additional_${i}.jpg`, 'image/jpeg')
@@ -351,6 +415,7 @@ export async function deserializeReviewItem(stored: StoredReviewItem): Promise<R
 		purchase_from: stored.purchase_from,
 		notes: stored.notes,
 		asset_id: stored.asset_id,
+		custom_fields: stored.custom_fields,
 		// ReviewItem-specific fields
 		sourceImageIndex: stored.sourceImageIndex,
 		originalFile,
@@ -367,9 +432,10 @@ export async function deserializeReviewItem(stored: StoredReviewItem): Promise<R
  * Deserialize a StoredConfirmedItem back to ConfirmedItem.
  */
 export async function deserializeConfirmedItem(
-	stored: StoredConfirmedItem
+	stored: StoredConfirmedItem,
+	images?: readonly CapturedImage[]
 ): Promise<ConfirmedItem> {
-	const reviewItem = await deserializeReviewItem(stored);
+	const reviewItem = await deserializeReviewItem(stored, images);
 	return {
 		...reviewItem,
 		confirmed: true,

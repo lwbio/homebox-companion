@@ -43,6 +43,9 @@
 	const itemStatuses = $derived(workflow.state.itemStatuses);
 	const submissionProgress = $derived(workflow.state.submissionProgress);
 	const submissionErrors = $derived(workflow.state.submissionErrors);
+	const hasUncertainItems = $derived(workflow.hasUncertainItems());
+	const hasPendingItems = $derived(workflow.hasPendingItems());
+	const hasPartialItems = $derived(workflow.hasPartialItems());
 
 	// Local UI state
 	let isSubmitting = $state(false);
@@ -71,10 +74,25 @@
 		// Wait for auth initialization to complete to avoid race conditions
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
+		if (!workflow.state.locationId) await workflow.recover();
 
 		if (!routeGuards.summary()) {
 			log.warn(`Summary route blocked: status=${workflow.state.status}`);
 			return;
+		}
+		if (workflow.allItemsSuccessful() && !workflow.hasPartialItems()) {
+			await workflow.completeWithSuccessfulItems();
+			goto(resolve('/success'));
+			return;
+		}
+		if (workflow.hasPartialItems()) {
+			showToast(
+				t('summary.warning.missingAttachments', {
+					count: Object.values(itemStatuses).filter((status) => status === 'partial_success')
+						.length,
+				}),
+				'warning'
+			);
 		}
 
 		// Show toast if any items have potential duplicates
@@ -143,7 +161,13 @@
 		}
 
 		// Show appropriate toast based on results
-		if (result.failCount > 0 && result.successCount === 0 && result.partialSuccessCount === 0) {
+		if (workflow.hasUncertainItems()) {
+			showToast(t('summary.warning.uncertainSubmission'), 'warning');
+		} else if (
+			result.failCount > 0 &&
+			result.successCount === 0 &&
+			result.partialSuccessCount === 0
+		) {
 			showToast(t('summary.error.allFailed'), 'error');
 		} else if (result.failCount > 0) {
 			showToast(
@@ -193,8 +217,8 @@
 		}
 	}
 
-	function continueWithSuccessful() {
-		// Don't reset here - let success page handle it so location is preserved for "Scan More"
+	async function continueWithSuccessful() {
+		await workflow.completeWithSuccessfulItems();
 		goto(resolve('/success'));
 	}
 </script>
@@ -362,6 +386,14 @@
 	</div>
 
 	<!-- Error details (shown when there are submission errors) -->
+	{#if hasUncertainItems}
+		<div
+			class="mb-6 rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-body-sm text-warning-100"
+		>
+			{t('summary.warning.uncertainSubmission')}
+		</div>
+	{/if}
+
 	{#if submissionErrors.length > 0}
 		<div class="mb-6 rounded-xl border border-error-500/30 bg-error-500/10 p-4">
 			<div class="flex items-start gap-3">
@@ -389,7 +421,23 @@
 	class="bottom-nav-offset fixed left-0 right-0 z-40 border-t border-neutral-800 bg-neutral-950/95 p-4 backdrop-blur-lg"
 >
 	<AppContainer class="space-y-3">
-		{#if !workflow.hasFailedItems() && !workflow.allItemsSuccessful()}
+		{#if hasUncertainItems}
+			{#if hasPendingItems}
+				<Button variant="primary" full size="lg" loading={isSubmitting} onclick={submitAll}>
+					<Check size={20} strokeWidth={2} />
+					<span>{t('summary.continuePending')}</span>
+				</Button>
+			{/if}
+			<Button variant="secondary" full onclick={continueWithSuccessful}>
+				<Check size={20} strokeWidth={1.5} />
+				<span>{t('summary.continueWithSuccessful')}</span>
+			</Button>
+		{:else if hasPartialItems}
+			<Button variant="secondary" full onclick={continueWithSuccessful}>
+				<Check size={20} strokeWidth={1.5} />
+				<span>{t('summary.continueWithSuccessful')}</span>
+			</Button>
+		{:else if !workflow.hasFailedItems() && !workflow.allItemsSuccessful()}
 			<Button variant="primary" full size="lg" loading={isSubmitting} onclick={submitAll}>
 				<Check size={20} strokeWidth={2} />
 				<span>{t('summary.submitAll', { count: confirmedItems.length })}</span>

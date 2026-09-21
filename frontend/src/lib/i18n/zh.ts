@@ -141,6 +141,8 @@ export default {
 	'capture.addPhotosHint': '添加照片以继续',
 	'capture.imageLimits': '{current} / {max} 张图片 · 每文件 {maxSize}MB',
 	'capture.error.fileTooLarge': '文件 {name} 太大（最大 {maxSize}MB）',
+	'capture.error.imageConversion': '无法转换此图片，请选择其他文件。',
+	'capture.error.persistenceFailed': '无法保存本次扫描，请释放存储空间后重试。',
 	'capture.error.maxImages': '最多允许 {max} 张图片',
 
 	// ── 审核页 ────────────────────────────────────────────────────────
@@ -183,11 +185,14 @@ export default {
 	'summary.submitAll': '提交所有物品 ({count})',
 	'summary.retryFailed': '重试失败的物品',
 	'summary.continueWithSuccessful': '继续处理成功的物品',
+	'summary.continuePending': '提交剩余物品',
 	'summary.warning.duplicate': '{count} 个物品可能已存在于你的库存中',
 	'summary.error.noItems': '没有要提交的物品',
 	'summary.error.allFailed': '所有物品创建失败',
 	'summary.warning.partialSuccess': '创建了 {created} 个物品，{failed} 个失败',
 	'summary.warning.missingAttachments': '{count} 个物品创建成功但附件缺失',
+	'summary.warning.uncertainSubmission':
+		'页面重载前可能已有一个或多个物品请求完成。为避免重复创建，系统不会自动重试；再次提交前请先在 Homebox 中核对。',
 	'summary.info.retried': '重试：{succeeded} 个成功，{failed} 个仍在失败',
 	'summary.info.retryComplete': '重试完成：{count} 个物品附件缺失',
 

@@ -12,6 +12,7 @@
 	import { routeGuards } from '$lib/utils/routeGuard';
 	import { getInitPromise } from '$lib/services/bootstrap';
 	import { createLogger } from '$lib/utils/logger';
+	import { normalizeImageFile } from '$lib/utils/imageFiles';
 	import { getConfig } from '$lib/api/settings';
 	import Button from '$lib/components/Button.svelte';
 	import AppContainer from '$lib/components/AppContainer.svelte';
@@ -51,6 +52,8 @@
 	let additionalCameraInputs: { [key: number]: HTMLInputElement } = {};
 	let analysisAnimationComplete = $state(false);
 	let isStartingAnalysis = $state(false);
+	let isOpeningPicker = $state(false);
+	let isProcessingSelection = $state(false);
 
 	// Track object URLs for cleanup (prevents memory leaks)
 	// Note: We only revoke URLs when images are explicitly removed, NOT on component
@@ -119,7 +122,9 @@
 	let showAnalyzingUI = $derived(
 		isAnalyzing || (status === 'reviewing' && !analysisAnimationComplete)
 	);
-	let isCaptureLocked = $derived(isAnalyzing || isStartingAnalysis);
+	let isCaptureLocked = $derived(
+		status !== 'capturing' || isStartingAnalysis || isOpeningPicker || isProcessingSelection
+	);
 
 	// Cleanup orphaned Object URLs when workflow is reset (images array becomes empty)
 	// This handles cases like workflow.startNew() or workflow.reset()
@@ -245,7 +250,7 @@
 		return false;
 	}
 
-	function handleFileSelect(e: Event) {
+	async function handleFileSelect(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files) return;
 		if (isCaptureLocked) {
@@ -254,11 +259,19 @@
 			return;
 		}
 		log.info(`File input selected ${input.files.length} file(s), currentTotal=${totalImageCount}`);
+		isProcessingSelection = true;
 
 		// Track count locally for limit enforcement
 		let currentCount = totalImageCount;
 
-		for (const file of Array.from(input.files)) {
+		for (const selectedFile of Array.from(input.files)) {
+			let file: File;
+			try {
+				file = await normalizeImageFile(selectedFile);
+			} catch {
+				showToast(t('capture.error.imageConversion'), 'error');
+				continue;
+			}
 			if (currentCount >= maxImages) {
 				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
 				break;
@@ -284,10 +297,11 @@
 		}
 
 		input.value = '';
+		isProcessingSelection = false;
 		log.info(`File input handled: totalImages=${totalImageCount}`);
 	}
 
-	function handleAdditionalImageSelect(imageIndex: number, e: Event) {
+	async function handleAdditionalImageSelect(imageIndex: number, e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files) return;
 		if (isCaptureLocked) {
@@ -298,6 +312,7 @@
 		log.info(
 			`Additional file input selected ${input.files.length} file(s) for image=${imageIndex}, currentTotal=${totalImageCount}`
 		);
+		isProcessingSelection = true;
 
 		const newFiles: File[] = [];
 		const newPreviewUrls: string[] = [];
@@ -305,7 +320,14 @@
 		// Track how many more we can accept
 		const remainingSlots = maxImages - totalImageCount;
 
-		for (const file of Array.from(input.files)) {
+		for (const selectedFile of Array.from(input.files)) {
+			let file: File;
+			try {
+				file = await normalizeImageFile(selectedFile);
+			} catch {
+				showToast(t('capture.error.imageConversion'), 'error');
+				continue;
+			}
 			// Check total image limit (including additional images)
 			if (newFiles.length >= remainingSlots) {
 				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
@@ -326,7 +348,22 @@
 		}
 
 		input.value = '';
+		isProcessingSelection = false;
 		log.info(`Additional file input handled: totalImages=${totalImageCount}`);
+	}
+
+	async function openPicker(input: HTMLInputElement | undefined): Promise<void> {
+		if (!input || isCaptureLocked) return;
+		isOpeningPicker = true;
+		try {
+			if (!(await workflow.persistAsync())) {
+				showToast(t('capture.error.persistenceFailed'), 'error');
+				return;
+			}
+			input.click();
+		} finally {
+			isOpeningPicker = false;
+		}
 	}
 
 	/** Handle paste event on the description input to add images from clipboard */
@@ -450,6 +487,7 @@
 	// ==========================================================================
 
 	async function startAnalysis() {
+		if (isCaptureLocked) return;
 		const flowStartedAt = performance.now();
 		log.info('[ANALYZE TIMING] Analyze button clicked | t=0.00s');
 
@@ -626,9 +664,9 @@
 						</Button>
 						<Button
 							variant="primary"
-							onclick={() => {
-								workflow.continueWithSuccessful();
-								goto(resolve('/review'));
+							onclick={async () => {
+								await workflow.continueWithSuccessful();
+								if (workflow.state.status === 'reviewing') goto(resolve('/review'));
 							}}
 							disabled={isStartingAnalysis}
 						>
@@ -637,9 +675,9 @@
 						</Button>
 						<Button
 							variant="secondary"
-							onclick={() => {
-								workflow.removeFailedImages();
-								goto(resolve('/review'));
+							onclick={async () => {
+								await workflow.removeFailedImages();
+								if (workflow.state.status === 'reviewing') goto(resolve('/review'));
 							}}
 							disabled={isStartingAnalysis}
 						>
@@ -656,12 +694,12 @@
 	{#if images.length > 0}
 		<div class="mb-4 space-y-3">
 			<!-- Add more images buttons (above image cards) -->
-			{#if totalImageCount < maxImages && !showAnalyzingUI && !isStartingAnalysis}
+			{#if totalImageCount < maxImages && !showAnalyzingUI && !isCaptureLocked}
 				<div class="flex gap-3">
 					<button
 						type="button"
 						class="group flex flex-1 items-center justify-center rounded-2xl bg-primary-500/10 py-6 transition-all hover:bg-primary-500/20"
-						onclick={() => cameraInput.click()}
+						onclick={() => openPicker(cameraInput)}
 					>
 						<div class="flex flex-col items-center gap-2">
 							<Camera
@@ -678,7 +716,7 @@
 					<button
 						type="button"
 						class="group flex flex-1 items-center justify-center rounded-2xl bg-primary-500/10 py-6 transition-all hover:bg-primary-500/20"
-						onclick={() => fileInput.click()}
+						onclick={() => openPicker(fileInput)}
 					>
 						<div class="flex flex-col items-center gap-2">
 							<Upload
@@ -877,7 +915,7 @@
 									<button
 										type="button"
 										class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 px-3 py-2.5 transition-all hover:border-primary-500/50 hover:bg-primary-500/5"
-										onclick={() => additionalCameraInputs[index]?.click()}
+										onclick={() => openPicker(additionalCameraInputs[index])}
 										disabled={isCaptureLocked}
 									>
 										<Camera class="text-neutral-400" size={16} strokeWidth={1.5} />
@@ -888,7 +926,7 @@
 									<button
 										type="button"
 										class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-600 px-3 py-2.5 transition-all hover:border-primary-500/50 hover:bg-primary-500/5"
-										onclick={() => additionalImageInputs[index]?.click()}
+										onclick={() => openPicker(additionalImageInputs[index])}
 										disabled={isCaptureLocked}
 									>
 										<Upload class="text-neutral-400" size={16} strokeWidth={1.5} />
@@ -952,7 +990,7 @@
 				<button
 					type="button"
 					class="group flex aspect-square w-28 items-center justify-center rounded-2xl bg-primary-500/10 transition-all hover:bg-primary-500/20"
-					onclick={() => cameraInput.click()}
+					onclick={() => openPicker(cameraInput)}
 				>
 					<div class="flex flex-col items-center gap-2">
 						<Camera
@@ -969,7 +1007,7 @@
 				<button
 					type="button"
 					class="group flex aspect-square w-28 items-center justify-center rounded-2xl bg-primary-500/10 transition-all hover:bg-primary-500/20"
-					onclick={() => fileInput.click()}
+					onclick={() => openPicker(fileInput)}
 				>
 					<div class="flex flex-col items-center gap-2">
 						<Upload
@@ -1033,7 +1071,7 @@
 			<Button
 				variant="primary"
 				full
-				disabled={images.length === 0 || isStartingAnalysis}
+				disabled={images.length === 0 || isCaptureLocked}
 				onclick={startAnalysis}
 			>
 				{#if isStartingAnalysis}

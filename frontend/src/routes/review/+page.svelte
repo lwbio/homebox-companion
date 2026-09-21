@@ -55,6 +55,7 @@
 	const currentIndex = $derived(workflow.state.currentReviewIndex);
 	const currentItem = $derived(workflow.currentItem);
 	const images = $derived(workflow.state.images);
+	const confirmedItems = $derived(workflow.state.confirmedItems);
 
 	// Local UI state
 	let editedItem = $state<ReviewItem | null>(null);
@@ -69,6 +70,22 @@
 
 	// Track original images to detect modifications (for invalidating compressed URLs)
 	let originalImageSet = $state<Set<File>>(new Set());
+	let originalImageOrder = $state<File[]>([]);
+	let loadedReviewIndex = $state(-1);
+	const maxImagesForCurrentItem = $derived.by(() => {
+		const capturedFiles = images.flatMap((image) => [image.file, ...(image.additionalFiles ?? [])]);
+		const otherReviewFiles = [
+			...detectedItems
+				.filter((_, index) => index !== currentIndex)
+				.flatMap((item) => [item.originalFile, ...(item.additionalImages ?? [])]),
+			...confirmedItems.flatMap((item) => [item.originalFile, ...(item.additionalImages ?? [])]),
+		].filter((file): file is File => file !== undefined);
+		const uniqueAddedFiles = [...otherReviewFiles, ...allImages].filter(
+			(file, index, files) => !capturedFiles.includes(file) && files.indexOf(file) === index
+		);
+		const remaining = Math.max(0, maxImages - capturedFiles.length - uniqueAddedFiles.length);
+		return allImages.length + remaining;
+	});
 
 	// Check if item has any extended field data
 	function hasExtendedFieldData(item: ReviewItem | null): boolean {
@@ -91,7 +108,8 @@
 
 	// Sync editedItem when currentItem changes
 	$effect(() => {
-		if (currentItem) {
+		if (currentItem && loadedReviewIndex !== currentIndex) {
+			loadedReviewIndex = currentIndex;
 			editedItem = { ...currentItem };
 			// Build unified images array: original first, then additional
 			const imageArray = [
@@ -99,11 +117,30 @@
 				...(currentItem.additionalImages || []),
 			];
 			allImages = imageArray;
+			originalImageSet = new Set(imageArray);
+			originalImageOrder = imageArray;
 			showExtendedFields = hasExtendedFieldData(currentItem);
 			showCustomFields = hasCustomFieldData(currentItem);
 			showImagesPanel = false;
 			showAiCorrection = false;
 		}
+	});
+
+	// Keep the editable draft in workflow state so camera-driven page recreation can recover it.
+	$effect(() => {
+		if (!editedItem || loadedReviewIndex !== currentIndex) return;
+		const imagesModified =
+			allImages.length !== originalImageOrder.length ||
+			allImages.some((file, index) => file !== originalImageOrder[index]);
+		if (imagesModified) {
+			editedItem.compressedDataUrl = undefined;
+			editedItem.compressedAdditionalDataUrls = undefined;
+		}
+		workflow.updateCurrentItem({
+			...editedItem,
+			originalFile: allImages[0],
+			additionalImages: allImages.slice(1),
+		});
 	});
 
 	// Accordion behavior: when one panel opens, close the others
@@ -151,6 +188,7 @@
 		// Wait for auth initialization to complete to avoid race conditions
 		// where we check isAuthenticated before initializeAuth clears expired tokens
 		await getInitPromise();
+		if (!workflow.state.locationId) await workflow.recover();
 
 		if (!routeGuards.review()) {
 			log.warn(`Review route blocked: status=${workflow.state.status}`);
@@ -193,9 +231,15 @@
 		goto(resolve('/capture'));
 	}
 
-	function skipItem() {
+	async function skipItem() {
+		if (isProcessing) return;
+		isProcessing = true;
 		log.info(`Review skip clicked: index=${currentIndex}, item=${editedItem?.name ?? 'none'}`);
-		workflow.skipItem();
+		try {
+			await workflow.skipItem();
+		} finally {
+			isProcessing = false;
+		}
 
 		// Scroll to top for next item
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -219,11 +263,8 @@
 			}
 			// Check if order changed - compare full array order, not just primary
 			// This ensures reordering additional images also invalidates compressed data
-			const originalArray = currentItem?.originalFile
-				? [currentItem.originalFile, ...(currentItem.additionalImages || [])]
-				: [];
 			for (let i = 0; i < allImages.length; i++) {
-				if (allImages[i] !== originalArray[i]) return true;
+				if (allImages[i] !== originalImageOrder[i]) return true;
 			}
 			return false;
 		})();
@@ -249,12 +290,18 @@
 		return editedItem;
 	}
 
-	function confirmItem() {
+	async function confirmItem() {
+		if (isProcessing) return;
 		const item = prepareItemForConfirmation();
 		if (!item) return;
+		isProcessing = true;
 		log.info(`Review confirm clicked: index=${currentIndex}, item=${item.name}`);
 
-		workflow.confirmItem(item);
+		try {
+			await workflow.confirmItem(item);
+		} finally {
+			isProcessing = false;
+		}
 
 		// Scroll to top for next item
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -266,17 +313,21 @@
 		showConfirmAllDialog = true;
 	}
 
-	function handleConfirmAll() {
+	async function handleConfirmAll() {
+		if (isProcessing) return;
+		isProcessing = true;
 		log.info(`Review confirm-all accepted: index=${currentIndex}, remaining=${remainingCount}`);
 		// Prepare the current item with any user edits
 		const preparedItem = prepareItemForConfirmation();
 
 		// Use the workflow method that handles confirming all items including the current one
-		workflow.confirmAllRemainingItems(preparedItem ?? undefined);
-		showConfirmAllDialog = false;
-
-		// Navigate to summary
-		goto(resolve('/summary'));
+		try {
+			await workflow.confirmAllRemainingItems(preparedItem ?? undefined);
+			showConfirmAllDialog = false;
+			goto(resolve('/summary'));
+		} finally {
+			isProcessing = false;
+		}
 	}
 
 	// Calculate remaining items count for dialog
@@ -533,10 +584,12 @@
 							editedItem.customThumbnail = undefined;
 						}
 					}}
+					beforeOpen={() => workflow.persistAsync()}
+					onProcessingChange={(processing) => (isProcessing = processing)}
 					expanded={showImagesPanel}
 					onToggle={toggleImagesPanel}
 					{maxFileSizeMb}
-					{maxImages}
+					maxImages={maxImagesForCurrentItem}
 				/>
 
 				<!-- AI Correction panel -->

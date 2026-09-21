@@ -71,12 +71,10 @@ function isUnsafeMethod(method?: string): boolean {
  */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
-/**
- * WeakSet to track AbortSignals created for timeout purposes.
- * This allows us to reliably distinguish timeout aborts from user-initiated cancellations
- * without relying on browser-specific error messages.
- */
-const timeoutSignals = new WeakSet<AbortSignal>();
+interface RequestSignal {
+	signal: AbortSignal;
+	abortSource: () => 'caller' | 'timeout' | null;
+}
 
 /**
  * Create a combined AbortSignal that aborts when either:
@@ -90,21 +88,38 @@ const timeoutSignals = new WeakSet<AbortSignal>();
 function createTimeoutSignal(
 	callerSignal?: AbortSignal,
 	timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
-): AbortSignal {
+): RequestSignal {
 	const timeoutSignal = abortSignalTimeout(timeoutMs);
-	// Track this signal as a timeout signal for reliable detection later
-	timeoutSignals.add(timeoutSignal);
+	let abortSource: 'caller' | 'timeout' | null = null;
+	const recordCallerAbort = () => {
+		abortSource ??= 'caller';
+	};
+	const recordTimeout = () => {
+		abortSource ??= 'timeout';
+	};
+	timeoutSignal.addEventListener('abort', recordTimeout, { once: true });
 
 	if (!callerSignal) {
-		return timeoutSignal;
+		return { signal: timeoutSignal, abortSource: () => abortSource };
 	}
+	if (callerSignal.aborted) recordCallerAbort();
+	else callerSignal.addEventListener('abort', recordCallerAbort, { once: true });
 
 	// Combine caller signal with timeout signal
 	// Uses abortSignalAny for browser compatibility (AbortSignal.any not in older Safari/Chrome)
 	const combinedSignal = abortSignalAny([callerSignal, timeoutSignal]);
-	// Mark the combined signal as timeout-capable
-	timeoutSignals.add(combinedSignal);
-	return combinedSignal;
+	return { signal: combinedSignal, abortSource: () => abortSource };
+}
+
+function createRequestSignal(
+	callerSignal: AbortSignal | undefined,
+	timeoutMs: number
+): RequestSignal {
+	if (timeoutMs > 0 && timeoutMs < Infinity) return createTimeoutSignal(callerSignal, timeoutMs);
+	return {
+		signal: callerSignal ?? new AbortController().signal,
+		abortSource: () => (callerSignal?.aborted ? 'caller' : null),
+	};
 }
 
 /**
@@ -225,14 +240,15 @@ async function handleUnauthorized(response: Response): Promise<boolean> {
  * @returns A NetworkError with appropriate type flags set
  * @throws The original error if it's a user-initiated abort
  */
-function wrapFetchError(error: unknown, endpoint: string, signal?: AbortSignal): NetworkError {
+function wrapFetchError(
+	error: unknown,
+	endpoint: string,
+	requestSignal: RequestSignal
+): NetworkError {
 	if (error instanceof Error) {
 		// Check for abort errors (user cancellation or timeout)
 		if (error.name === 'AbortError') {
-			// Check if this was a timeout abort by seeing if the signal is tracked
-			// in our timeoutSignals WeakSet (more reliable than checking error message)
-			const isTimeout = signal ? timeoutSignals.has(signal) : false;
-			if (isTimeout) {
+			if (requestSignal.abortSource() === 'timeout') {
 				return new NetworkError(`Request to ${endpoint} timed out`, error, { isTimeout: true });
 			}
 			// User-initiated abort - re-throw directly to preserve existing
@@ -242,6 +258,7 @@ function wrapFetchError(error: unknown, endpoint: string, signal?: AbortSignal):
 
 		// Check for timeout explicitly (some implementations use TimeoutError)
 		if (error.name === 'TimeoutError') {
+			if (requestSignal.abortSource() === 'caller') throw error;
 			return new NetworkError(`Request to ${endpoint} timed out`, error, { isTimeout: true });
 		}
 
@@ -363,10 +380,8 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 	};
 
 	// Create signal with default timeout, combining with caller's signal if provided
-	const signal =
-		timeoutMs > 0 && timeoutMs < Infinity
-			? createTimeoutSignal(options.signal, timeoutMs)
-			: options.signal;
+	const requestSignal = createRequestSignal(options.signal, timeoutMs);
+	const { signal } = requestSignal;
 
 	// First attempt
 	let response: Response;
@@ -382,7 +397,7 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 			`Response from ${endpoint}: ${response.status} | duration=${((performance.now() - requestStartedAt) / 1000).toFixed(2)}s`
 		);
 	} catch (error) {
-		const networkError = wrapFetchError(error, endpoint, signal);
+		const networkError = wrapFetchError(error, endpoint, requestSignal);
 		log.error(`Network error for ${endpoint}`, networkError);
 		throw networkError;
 	}
@@ -395,10 +410,8 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 		if (shouldRetry) {
 			// Token was refreshed - retry the request with new token
 			// Create a fresh timeout signal for the retry (don't reuse the original)
-			const retrySignal =
-				timeoutMs > 0 && timeoutMs < Infinity
-					? createTimeoutSignal(options.signal, timeoutMs)
-					: options.signal;
+			const retryRequestSignal = createRequestSignal(options.signal, timeoutMs);
+			const { signal: retrySignal } = retryRequestSignal;
 
 			log.debug(`Retrying ${endpoint} after token refresh`);
 			const retryStartedAt = performance.now();
@@ -412,7 +425,7 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 					`Retry response from ${endpoint}: ${response.status} | duration=${((performance.now() - retryStartedAt) / 1000).toFixed(2)}s`
 				);
 			} catch (error) {
-				const networkError = wrapFetchError(error, endpoint, retrySignal);
+				const networkError = wrapFetchError(error, endpoint, retryRequestSignal);
 				log.error(`Network error on retry for ${endpoint}`, networkError);
 				throw networkError;
 			}
@@ -463,6 +476,8 @@ export interface FormDataRequestOptions {
 	 * Authorization header is automatically added if a token exists.
 	 */
 	headers?: Record<string, string>;
+	/** Disable automatic replay after token refresh for non-idempotent uploads. */
+	skipAuthRetry?: boolean;
 }
 
 /**
@@ -536,10 +551,8 @@ export async function requestBlobUrl(
 	const getHeaders = (): HeadersInit => buildApiHeaders();
 
 	// Create signal with default timeout, combining with caller's signal if provided
-	const signal =
-		timeoutMs > 0 && timeoutMs < Infinity
-			? createTimeoutSignal(opts.signal, timeoutMs)
-			: opts.signal;
+	const requestSignal = createRequestSignal(opts.signal, timeoutMs);
+	const { signal } = requestSignal;
 
 	// First attempt
 	let response: Response;
@@ -549,7 +562,7 @@ export async function requestBlobUrl(
 			signal,
 		});
 	} catch (error) {
-		const networkError = wrapFetchError(error, endpoint, signal);
+		const networkError = wrapFetchError(error, endpoint, requestSignal);
 		log.debug(`Blob request network error for ${endpoint}:`, networkError.message);
 		throw networkError;
 	}
@@ -561,10 +574,8 @@ export async function requestBlobUrl(
 		if (shouldRetry) {
 			// Token was refreshed - retry the request with new token
 			// Create a fresh timeout signal for the retry (don't reuse the original)
-			const retrySignal =
-				timeoutMs > 0 && timeoutMs < Infinity
-					? createTimeoutSignal(opts.signal, timeoutMs)
-					: opts.signal;
+			const retryRequestSignal = createRequestSignal(opts.signal, timeoutMs);
+			const { signal: retrySignal } = retryRequestSignal;
 
 			log.debug(`Retrying blob request ${endpoint} after token refresh`);
 			try {
@@ -573,7 +584,7 @@ export async function requestBlobUrl(
 					signal: retrySignal,
 				});
 			} catch (error) {
-				const networkError = wrapFetchError(error, endpoint, retrySignal);
+				const networkError = wrapFetchError(error, endpoint, retryRequestSignal);
 				log.debug(`Blob request network error on retry for ${endpoint}:`, networkError.message);
 				throw networkError;
 			}
@@ -712,10 +723,8 @@ export async function requestFormData<T>(
 		buildApiHeaders({ ...options.headers, 'X-Companion-Request': '1' });
 
 	// Create signal with default timeout, combining with caller's signal if provided
-	const signal =
-		timeoutMs > 0 && timeoutMs < Infinity
-			? createTimeoutSignal(options.signal, timeoutMs)
-			: options.signal;
+	const requestSignal = createRequestSignal(options.signal, timeoutMs);
+	const { signal } = requestSignal;
 
 	// First attempt
 	let response: Response;
@@ -749,7 +758,7 @@ export async function requestFormData<T>(
 		}
 	} catch (error) {
 		clearTimeout(resumeDiagnostic);
-		const networkError = wrapFetchError(error, endpoint, signal);
+		const networkError = wrapFetchError(error, endpoint, requestSignal);
 		log.error(`Network error for ${endpoint}`, networkError);
 		throw networkError;
 	}
@@ -758,15 +767,13 @@ export async function requestFormData<T>(
 	log.debug(`Response from ${endpoint}:`, response.status, response.statusText);
 
 	// Handle 401 with automatic retry after refresh
-	if (!response.ok && response.status === 401) {
+	if (!response.ok && response.status === 401 && !options.skipAuthRetry) {
 		const shouldRetry = await handleUnauthorized(response);
 		if (shouldRetry) {
 			// Token was refreshed - retry the request with new token
 			// Create a fresh timeout signal for the retry (don't reuse the original)
-			const retrySignal =
-				timeoutMs > 0 && timeoutMs < Infinity
-					? createTimeoutSignal(options.signal, timeoutMs)
-					: options.signal;
+			const retryRequestSignal = createRequestSignal(options.signal, timeoutMs);
+			const { signal: retrySignal } = retryRequestSignal;
 
 			log.debug(`Retrying FormData request ${endpoint} after token refresh`);
 			try {
@@ -778,7 +785,7 @@ export async function requestFormData<T>(
 				});
 				log.debug(`Retry response from ${endpoint}:`, response.status, response.statusText);
 			} catch (error) {
-				const networkError = wrapFetchError(error, endpoint, retrySignal);
+				const networkError = wrapFetchError(error, endpoint, retryRequestSignal);
 				log.error(`Network error on retry for ${endpoint}`, networkError);
 				throw networkError;
 			}

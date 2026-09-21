@@ -3,6 +3,7 @@
 	import { slide } from 'svelte/transition';
 	import { showToast } from '$lib/stores/ui.svelte';
 	import { createObjectUrlManager } from '$lib/utils/objectUrl';
+	import { normalizeImageFile } from '$lib/utils/imageFiles';
 	import { Camera, Upload, ChevronDown, ImageIcon, X, SquarePen } from 'lucide-svelte';
 	import { t } from '$lib/i18n/reactive.svelte';
 
@@ -10,6 +11,8 @@
 		images: File[];
 		customThumbnail?: string;
 		onCustomThumbnailClear?: () => void;
+		beforeOpen?: () => Promise<boolean | void>;
+		onProcessingChange?: (processing: boolean) => void;
 		expanded: boolean;
 		onToggle: () => void;
 		/** Maximum file size in MB (default: 10) */
@@ -22,6 +25,8 @@
 		images = $bindable(),
 		customThumbnail,
 		onCustomThumbnailClear,
+		beforeOpen,
+		onProcessingChange,
 		expanded,
 		onToggle,
 		maxFileSizeMb = 10,
@@ -30,6 +35,7 @@
 
 	let fileInput: HTMLInputElement;
 	let cameraInput: HTMLInputElement;
+	let isProcessingFiles = $state(false);
 
 	// Object URL manager for cleanup
 	const urlManager = createObjectUrlManager();
@@ -50,11 +56,20 @@
 		return () => urlManager.cleanup();
 	});
 
-	function handleAddImages(e: Event) {
+	async function handleAddImages(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files) return;
 
-		for (const file of Array.from(input.files)) {
+		isProcessingFiles = true;
+		onProcessingChange?.(true);
+		for (const selectedFile of Array.from(input.files)) {
+			let file: File;
+			try {
+				file = await normalizeImageFile(selectedFile);
+			} catch {
+				showToast(t('capture.error.imageConversion'), 'error');
+				continue;
+			}
 			// Check max images limit if provided
 			if (maxImages !== undefined && images.length >= maxImages) {
 				showToast(t('capture.error.maxImages', { max: maxImages }), 'warning');
@@ -72,6 +87,17 @@
 			images = [...images, file];
 		}
 		input.value = '';
+		isProcessingFiles = false;
+		onProcessingChange?.(false);
+	}
+
+	async function openPicker(input: HTMLInputElement): Promise<void> {
+		const persisted = await beforeOpen?.();
+		if (persisted === false) {
+			showToast(t('capture.error.persistenceFailed'), 'error');
+			return;
+		}
+		input.click();
 	}
 
 	function removeImage(index: number) {
@@ -97,7 +123,8 @@
 		<button
 			type="button"
 			class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-700/40 px-3 py-2.5 transition-all hover:border-primary-500/40 hover:bg-primary-500/5"
-			onclick={() => cameraInput.click()}
+			onclick={() => openPicker(cameraInput)}
+			disabled={isProcessingFiles}
 		>
 			<Camera class="text-neutral-400" size={16} strokeWidth={1.5} />
 			<span class="text-xs font-medium text-neutral-400">{t('capture.camera')}</span>
@@ -105,7 +132,8 @@
 		<button
 			type="button"
 			class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-700/40 px-3 py-2.5 transition-all hover:border-primary-500/40 hover:bg-primary-500/5"
-			onclick={() => fileInput.click()}
+			onclick={() => openPicker(fileInput)}
+			disabled={isProcessingFiles}
 		>
 			<Upload class="text-neutral-400" size={16} strokeWidth={1.5} />
 			<span class="text-xs font-medium text-neutral-400">{t('capture.upload')}</span>

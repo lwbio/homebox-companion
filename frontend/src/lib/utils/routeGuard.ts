@@ -166,17 +166,11 @@ export const routeGuards = {
 		const result = checkRouteAccess({
 			auth: true,
 			requireLocation: true,
+			allowedStatuses: ['capturing', 'analyzing', 'partial_analysis'],
 		});
 
 		if (!result.allowed && result.redirectTo) {
 			goto(resolveNavHref(result.redirectTo));
-			return false;
-		}
-
-		// If we're in reviewing state (analysis finished while away), redirect to review
-		const workflow = scanWorkflow;
-		if (workflow.state.status === 'reviewing') {
-			goto(resolveNavHref('/review'));
 			return false;
 		}
 

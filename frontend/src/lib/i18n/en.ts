@@ -141,6 +141,9 @@ export default {
 	'capture.addPhotosHint': 'Add photos to continue',
 	'capture.imageLimits': '{current} / {max} images · {maxSize}MB per file',
 	'capture.error.fileTooLarge': 'File {name} is too large (max {maxSize}MB)',
+	'capture.error.imageConversion': 'This image could not be converted. Choose another file.',
+	'capture.error.persistenceFailed':
+		'This scan could not be saved. Free storage space and try again.',
 	'capture.error.maxImages': 'Maximum {max} images allowed',
 
 	// ── Review Page ─────────────────────────────────────────────────────
@@ -183,11 +186,14 @@ export default {
 	'summary.submitAll': 'Submit All Items ({count})',
 	'summary.retryFailed': 'Retry Failed Items',
 	'summary.continueWithSuccessful': 'Continue with Successful Items',
+	'summary.continuePending': 'Submit Remaining Items',
 	'summary.warning.duplicate': '{count} item(s) may already exist in your inventory',
 	'summary.error.noItems': 'No items to submit',
 	'summary.error.allFailed': 'All items failed to create',
 	'summary.warning.partialSuccess': 'Created {created} items, {failed} failed',
 	'summary.warning.missingAttachments': '{count} item(s) created with missing attachments',
+	'summary.warning.uncertainSubmission':
+		'One or more item requests may have completed before the page reloaded. They will not be retried automatically to avoid duplicates. Verify them in Homebox before submitting again.',
 	'summary.info.retried': 'Retried: {succeeded} succeeded, {failed} still failing',
 	'summary.info.retryComplete': 'Retry complete: {count} item(s) with missing attachments',
 

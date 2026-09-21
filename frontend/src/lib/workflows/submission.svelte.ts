@@ -10,8 +10,7 @@
  */
 
 import { items as itemsApi } from '$lib/api/index';
-import { ApiError } from '$lib/api/client';
-import { withRetry } from '$lib/utils/retry';
+import { ApiError, NetworkError } from '$lib/api/client';
 import { workflowLogger as log } from '$lib/utils/logger';
 import { hasToken } from '$lib/utils/token';
 import type {
@@ -36,6 +35,20 @@ export interface SubmitResult {
 	errors: string[];
 }
 
+/** Serializable state needed to continue or summarize a partially completed submission. */
+export interface SubmissionProgressSnapshot {
+	itemStatuses: Record<number, ItemSubmissionStatus>;
+	createdItemIds: Record<number, string>;
+}
+
+type SubmissionCheckpoint = () => Promise<void>;
+
+interface SubmitOptions {
+	validateAuth?: boolean;
+	resumeExisting?: boolean;
+	onCheckpoint?: SubmissionCheckpoint;
+}
+
 // =============================================================================
 // SUBMISSION SERVICE CLASS
 // =============================================================================
@@ -56,6 +69,10 @@ export class SubmissionService {
 	/** Tracks created item IDs (by submission index) for parent picker */
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Private non-reactive map, cleared each submission
 	private createdItemIds = new Map<number, string>();
+
+	/** Blob URLs owned by lastResult and revoked when that result is replaced or reset. */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Private resource ownership tracking
+	private resultBlobUrls = new Set<string>();
 
 	/** Abort controller for cancellable operations */
 	private abortController: AbortController | null = null;
@@ -87,6 +104,13 @@ export class SubmissionService {
 		return new File([blob], filename, { type: blob.type || 'image/jpeg' });
 	}
 
+	private revokeResultBlobUrls(): void {
+		for (const url of this.resultBlobUrls) {
+			URL.revokeObjectURL(url);
+		}
+		this.resultBlobUrls.clear();
+	}
+
 	/**
 	 * Upload attachments for a created item.
 	 * Returns status indicating what succeeded/failed.
@@ -95,8 +119,9 @@ export class SubmissionService {
 		itemId: string,
 		confirmedItem: ConfirmedItem,
 		signal?: AbortSignal
-	): Promise<{ primaryFailed: boolean; additionalFailed: boolean }> {
+	): Promise<{ primaryFailed: boolean; primaryUncertain: boolean; additionalFailed: boolean }> {
 		let primaryFailed = false;
+		let primaryUncertain = false;
 		let additionalFailed = false;
 
 		// Upload custom thumbnail (replaces original) or compressed/original image as primary
@@ -106,16 +131,14 @@ export class SubmissionService {
 					confirmedItem.customThumbnail,
 					`thumbnail_${confirmedItem.name.replace(/\s+/g, '_')}.jpg`
 				);
-				await withRetry(() => itemsApi.uploadAttachment(itemId, thumbnailFile, { signal }), {
-					maxAttempts: 3,
-					onRetry: (attempt) => log.debug(`Retrying thumbnail upload (attempt ${attempt})`),
-				});
+				await itemsApi.uploadAttachment(itemId, thumbnailFile, { signal });
 			} catch (error) {
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw error;
 				}
 				log.error(`Failed to upload thumbnail for ${confirmedItem.name}`, error);
-				primaryFailed = true;
+				if (error instanceof NetworkError) primaryUncertain = true;
+				else primaryFailed = true;
 			}
 		} else if (confirmedItem.compressedDataUrl) {
 			// Use compressed image if available (preferred)
@@ -124,40 +147,33 @@ export class SubmissionService {
 					confirmedItem.compressedDataUrl,
 					`${confirmedItem.name.replace(/\s+/g, '_')}.jpg`
 				);
-				await withRetry(() => itemsApi.uploadAttachment(itemId, compressedFile, { signal }), {
-					maxAttempts: 3,
-					onRetry: (attempt) => log.debug(`Retrying compressed image upload (attempt ${attempt})`),
-				});
+				await itemsApi.uploadAttachment(itemId, compressedFile, { signal });
 			} catch (error) {
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw error;
 				}
 				log.error(`Failed to upload compressed image for ${confirmedItem.name}`, error);
-				primaryFailed = true;
+				if (error instanceof NetworkError) primaryUncertain = true;
+				else primaryFailed = true;
 			}
 		} else if (confirmedItem.originalFile) {
 			// Fallback to original file if no compressed version available
 			try {
-				await withRetry(
-					() => itemsApi.uploadAttachment(itemId, confirmedItem.originalFile!, { signal }),
-					{
-						maxAttempts: 3,
-						onRetry: (attempt) => log.debug(`Retrying image upload (attempt ${attempt})`),
-					}
-				);
+				await itemsApi.uploadAttachment(itemId, confirmedItem.originalFile, { signal });
 			} catch (error) {
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw error;
 				}
 				log.error(`Failed to upload image for ${confirmedItem.name}`, error);
-				primaryFailed = true;
+				if (error instanceof NetworkError) primaryUncertain = true;
+				else primaryFailed = true;
 			}
 		}
 
 		// If primary image failed, don't bother with additional images
 		// The item will be deleted anyway
-		if (primaryFailed) {
-			return { primaryFailed, additionalFailed: false };
+		if (primaryFailed || primaryUncertain) {
+			return { primaryFailed, primaryUncertain, additionalFailed: false };
 		}
 
 		// Upload additional images (prefer compressed versions)
@@ -188,10 +204,7 @@ export class SubmissionService {
 		// Upload all additional images
 		for (const addImage of additionalToUpload) {
 			try {
-				await withRetry(() => itemsApi.uploadAttachment(itemId, addImage, { signal }), {
-					maxAttempts: 3,
-					onRetry: (attempt) => log.debug(`Retrying additional image upload (attempt ${attempt})`),
-				});
+				await itemsApi.uploadAttachment(itemId, addImage, { signal });
 			} catch (error) {
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw error;
@@ -201,7 +214,7 @@ export class SubmissionService {
 			}
 		}
 
-		return { primaryFailed, additionalFailed };
+		return { primaryFailed, primaryUncertain, additionalFailed };
 	}
 
 	/** Submit a single item. Updates itemStatuses. Returns status, optional error, and created ID. */
@@ -210,9 +223,11 @@ export class SubmissionService {
 		confirmedItem: ConfirmedItem,
 		locationId: string | null,
 		parentId: string | null,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+		onCheckpoint?: SubmissionCheckpoint
 	): Promise<{ status: ItemSubmissionStatus; error?: string; createdId?: string }> {
 		this.itemStatuses = { ...this.itemStatuses, [index]: 'creating' };
+		await onCheckpoint?.();
 
 		try {
 			const itemInput: ItemInput = {
@@ -263,6 +278,14 @@ export class SubmissionService {
 
 				if (createdItem?.id) {
 					const uploadResult = await this.uploadAttachments(createdItem.id, confirmedItem, signal);
+					if (uploadResult.primaryUncertain) {
+						this.itemStatuses = { ...this.itemStatuses, [index]: 'partial_success' };
+						return {
+							status: 'partial_success',
+							error: `Item created but image upload outcome is unknown`,
+							createdId: createdItem.id,
+						};
+					}
 
 					// If primary image failed, delete the created item and mark as failed
 					if (uploadResult.primaryFailed) {
@@ -358,6 +381,11 @@ export class SubmissionService {
 			if (error instanceof Error && error.name === 'AbortError') {
 				throw error;
 			}
+			if (error instanceof NetworkError) {
+				const errorMsg = `Creation outcome is unknown for '${confirmedItem.name}'`;
+				this.itemStatuses = { ...this.itemStatuses, [index]: 'unknown' };
+				return { status: 'unknown', error: errorMsg };
+			}
 			// Check for 401 authentication error
 			if (error instanceof ApiError && error.status === 401) {
 				// Session expired - mark and re-throw
@@ -386,7 +414,7 @@ export class SubmissionService {
 		items: ConfirmedItem[],
 		locationId: string | null,
 		parentId: string | null,
-		options?: { validateAuth?: boolean }
+		options?: SubmitOptions
 	): Promise<SubmitResult> {
 		const result: SubmitResult = {
 			success: false,
@@ -411,15 +439,15 @@ export class SubmissionService {
 
 		this.abortController = new AbortController();
 
-		// Clear created item IDs from previous submissions
-		this.createdItemIds.clear();
-
-		// Initialize all items as pending
-		const initialStatuses: Record<number, ItemSubmissionStatus> = {};
-		items.forEach((_, index) => {
-			initialStatuses[index] = 'pending';
-		});
-		this.itemStatuses = initialStatuses;
+		const resumeExisting = options?.resumeExisting === true;
+		if (!resumeExisting) {
+			this.createdItemIds.clear();
+			const initialStatuses: Record<number, ItemSubmissionStatus> = {};
+			items.forEach((_, index) => {
+				initialStatuses[index] = 'pending';
+			});
+			this.itemStatuses = initialStatuses;
+		}
 
 		this.progress = {
 			current: 0,
@@ -435,18 +463,33 @@ export class SubmissionService {
 					return result;
 				}
 
-				const itemResult = await this.submitItem(i, items[i], locationId, parentId, signal);
+				const existingStatus = this.itemStatuses[i];
+				if (
+					resumeExisting &&
+					(existingStatus === 'success' ||
+						existingStatus === 'partial_success' ||
+						existingStatus === 'unknown')
+				) {
+					if (existingStatus === 'success') result.successCount++;
+					else if (existingStatus === 'partial_success') result.partialSuccessCount++;
+					else result.failCount++;
+					continue;
+				}
+
+				const itemResult = await this.submitItem(
+					i,
+					items[i],
+					locationId,
+					parentId,
+					signal,
+					options?.onCheckpoint
+				);
+				if (itemResult.createdId) this.createdItemIds.set(i, itemResult.createdId);
 
 				if (itemResult.status === 'success') {
 					result.successCount++;
-					if (itemResult.createdId) {
-						this.createdItemIds.set(i, itemResult.createdId);
-					}
 				} else if (itemResult.status === 'partial_success') {
 					result.partialSuccessCount++;
-					if (itemResult.createdId) {
-						this.createdItemIds.set(i, itemResult.createdId);
-					}
 					// Collect warning for partial success (e.g., missing attachments)
 					if (itemResult.error) {
 						result.errors.push(`${items[i].name}: ${itemResult.error}`);
@@ -460,6 +503,7 @@ export class SubmissionService {
 						result.errors.push(`Failed to create '${items[i].name}'`);
 					}
 				}
+				await options?.onCheckpoint?.();
 
 				this.progress = {
 					current: i + 1,
@@ -519,7 +563,8 @@ export class SubmissionService {
 	async retryFailed(
 		items: ConfirmedItem[],
 		locationId: string | null,
-		parentId: string | null
+		parentId: string | null,
+		onCheckpoint?: SubmissionCheckpoint
 	): Promise<SubmitResult> {
 		const result: SubmitResult = {
 			success: false,
@@ -554,7 +599,15 @@ export class SubmissionService {
 					return result;
 				}
 
-				const itemResult = await this.submitItem(i, items[i], locationId, parentId, signal);
+				const itemResult = await this.submitItem(
+					i,
+					items[i],
+					locationId,
+					parentId,
+					signal,
+					onCheckpoint
+				);
+				if (itemResult.createdId) this.createdItemIds.set(i, itemResult.createdId);
 
 				if (itemResult.createdId) this.createdItemIds.set(i, itemResult.createdId);
 
@@ -573,6 +626,7 @@ export class SubmissionService {
 						result.errors.push(`Failed to create '${items[i].name}'`);
 					}
 				}
+				await onCheckpoint?.();
 			}
 
 			// Check if all items are now successful
@@ -617,6 +671,23 @@ export class SubmissionService {
 		}
 	}
 
+	/** Export the minimal serializable state required to resume failed-item retries. */
+	exportProgressSnapshot(): SubmissionProgressSnapshot {
+		return {
+			itemStatuses: { ...this.itemStatuses },
+			createdItemIds: Object.fromEntries(this.createdItemIds),
+		};
+	}
+
+	/** Restore submission progress previously returned by exportProgressSnapshot(). */
+	restoreProgressSnapshot(snapshot: SubmissionProgressSnapshot): void {
+		this.itemStatuses = { ...snapshot.itemStatuses };
+		this.createdItemIds.clear();
+		for (const [index, id] of Object.entries(snapshot.createdItemIds)) {
+			this.createdItemIds.set(Number(index), id);
+		}
+	}
+
 	/**
 	 * Save submission result for success page display
 	 * @param items - Confirmed items that were submitted
@@ -624,6 +695,8 @@ export class SubmissionService {
 	 * @param locationId - ID of the target location
 	 */
 	saveResult(items: ConfirmedItem[], locationName: string | null, locationId: string | null): void {
+		this.revokeResultBlobUrls();
+
 		// Count successful items
 		const successfulIndices = Object.entries(this.itemStatuses)
 			.filter(([_, status]) => status === 'success' || status === 'partial_success')
@@ -660,10 +733,11 @@ export class SubmissionService {
 			if (createdId && items[index]) {
 				const item = items[index];
 				// Use custom thumbnail, compressed image, or create object URL from original file
-				const thumbnail =
-					item.customThumbnail ||
-					item.compressedDataUrl ||
-					(item.originalFile ? URL.createObjectURL(item.originalFile) : undefined);
+				let thumbnail = item.customThumbnail || item.compressedDataUrl;
+				if (!thumbnail && item.originalFile) {
+					thumbnail = URL.createObjectURL(item.originalFile);
+					this.resultBlobUrls.add(thumbnail);
+				}
 				createdItems.push({
 					id: createdId,
 					name: item.name,
@@ -698,7 +772,12 @@ export class SubmissionService {
 	}
 
 	restore(snapshot: ReturnType<SubmissionService['snapshot']>): void {
-		this.itemStatuses = { ...snapshot.itemStatuses };
+		this.itemStatuses = Object.fromEntries(
+			Object.entries(snapshot.itemStatuses).map(([index, status]) => [
+				index,
+				status === 'creating' ? 'unknown' : status,
+			])
+		) as Record<number, ItemSubmissionStatus>;
 		this.createdItemIds.clear();
 		for (const [index, id] of Object.entries(snapshot.createdItemIds)) {
 			this.createdItemIds.set(Number(index), id);
@@ -715,6 +794,7 @@ export class SubmissionService {
 		}
 		this.progress = null;
 		this.itemStatuses = {};
+		this.revokeResultBlobUrls();
 		this.lastResult = null;
 		this.lastErrors = [];
 		this.createdItemIds.clear();
@@ -727,6 +807,18 @@ export class SubmissionService {
 	/** Check if there are any failed items */
 	hasFailedItems(): boolean {
 		return Object.values(this.itemStatuses).some((s) => s === 'failed');
+	}
+
+	hasUncertainItems(): boolean {
+		return Object.values(this.itemStatuses).some((status) => status === 'unknown');
+	}
+
+	hasPendingItems(): boolean {
+		return Object.values(this.itemStatuses).some((status) => status === 'pending');
+	}
+
+	hasPartialItems(): boolean {
+		return Object.values(this.itemStatuses).some((status) => status === 'partial_success');
 	}
 
 	/** Check if all items were successfully submitted */

@@ -7,9 +7,7 @@ import { apiLogger as log } from '../utils/logger';
 import type {
 	BatchCreateRequest,
 	BatchCreateResponse,
-	ItemSummary,
 	ItemDetail,
-	ItemListItem,
 	ItemListResponse,
 } from '../types';
 
@@ -86,6 +84,7 @@ export const items = {
 		return requestFormData<unknown>(`/items/${itemId}/attachments`, formData, {
 			errorMessage: 'Failed to upload attachment',
 			signal: options.signal,
+			skipAuthRetry: true,
 		});
 	},
 

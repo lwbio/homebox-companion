@@ -15,7 +15,8 @@
 		| 'analyzing'
 		| 'success'
 		| 'partial_success'
-		| 'failed';
+		| 'failed'
+		| 'unknown';
 
 	interface Props {
 		status: Status;
@@ -30,7 +31,7 @@
 		status === 'processing' || status === 'creating' || status === 'analyzing'
 	);
 	let isSuccess = $derived(status === 'success');
-	let isWarning = $derived(status === 'partial_success');
+	let isWarning = $derived(status === 'partial_success' || status === 'unknown');
 	let isFailed = $derived(status === 'failed');
 	let isPending = $derived(status === 'pending');
 

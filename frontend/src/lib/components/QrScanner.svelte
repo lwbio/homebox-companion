@@ -5,6 +5,7 @@
 	import { X, TriangleAlert, Camera } from 'lucide-svelte';
 	import { qrLogger as log } from '$lib/utils/logger';
 	import { t } from '$lib/i18n/reactive.svelte';
+	import { normalizeImageFile } from '$lib/utils/imageFiles';
 
 	interface Props {
 		onScan: (decodedText: string) => void;
@@ -211,27 +212,7 @@
 		fileInput?.click();
 	}
 
-	// Convert HEIC images to JPEG (iOS may send HEIC format)
-	// Uses dynamic import to avoid loading ~350KB library unless needed
-	async function convertHeicIfNeeded(file: File): Promise<Blob> {
-		const isHeic =
-			file.type === 'image/heic' ||
-			file.type === 'image/heif' ||
-			file.name.toLowerCase().endsWith('.heic') ||
-			file.name.toLowerCase().endsWith('.heif');
-
-		if (isHeic) {
-			// Lazy-load heic2any only when we actually need it
-			const { default: heic2any } = await import('heic2any');
-			const blob = await heic2any({
-				blob: file,
-				toType: 'image/jpeg',
-				quality: 0.92,
-			});
-			return Array.isArray(blob) ? blob[0] : blob;
-		}
-		return file;
-	}
+	const convertHeicIfNeeded = normalizeImageFile;
 
 	// Scale down large images - qr-scanner fails on images > ~2MP
 	const MAX_IMAGE_DIMENSION = 1280;
