@@ -12,7 +12,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from server.app import create_app
-from server.dependencies import client_holder
+from server.dependencies import get_gateway
 
 
 @pytest.fixture
@@ -29,11 +29,11 @@ def mock_client() -> MagicMock:
 async def app_with_mock(mock_client: MagicMock):
     """Create a FastAPI test client with mocked dependencies."""
     app = create_app()
-    client_holder.set(mock_client)
+    app.dependency_overrides[get_gateway] = lambda: mock_client
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield app, ac, mock_client
-    client_holder.reset()
+    app.dependency_overrides.clear()
 
 
 def _auth_headers() -> dict[str, str]:

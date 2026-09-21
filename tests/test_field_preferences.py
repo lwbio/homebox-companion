@@ -27,6 +27,7 @@ class TestConfigurationPriority:
         # Set up clean config directory
         config_dir = tmp_path / "config"
         config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
 
         monkeypatch.setattr(field_preferences, "CONFIG_DIR", config_dir)
         monkeypatch.setattr(field_preferences, "PREFERENCES_FILE", config_dir / "field_preferences.json")

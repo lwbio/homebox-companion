@@ -1,11 +1,7 @@
 import { browser } from '$app/environment';
 import { authStore, type HomeboxConnection } from '$lib/stores/auth.svelte';
 import { collectionStore } from '$lib/stores/collection.svelte';
-import {
-	setClientSideImageCompression,
-	setDemoMode,
-	type ConfigResponse,
-} from '$lib/api/settings';
+import { setDemoMode, type ConfigResponse } from '$lib/api/settings';
 import { request } from '$lib/api/client';
 import { initializeAuth } from './tokenRefresh';
 import { setLogLevel } from '$lib/utils/logger';
@@ -72,7 +68,6 @@ async function runBootstrap(): Promise<void> {
 		const config = await discoverConfig();
 		setLogLevel(config.log_level);
 		setDemoMode(config.is_demo_mode, config.demo_mode_explicit);
-		setClientSideImageCompression(config.client_side_image_compression);
 		setLocaleFromLanguage(config.output_language);
 		authStore.beginMode(config.auth_mode);
 

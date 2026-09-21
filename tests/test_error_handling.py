@@ -89,6 +89,8 @@ class TestFieldPreferencesFileCorruption:
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("HBC_AI_OUTPUT_LANGUAGE", raising=False)
         prefs_file = config_dir / "field_preferences.json"
 
         # Write invalid JSON
@@ -111,6 +113,8 @@ class TestFieldPreferencesFileCorruption:
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("HBC_AI_OUTPUT_LANGUAGE", raising=False)
         prefs_file = config_dir / "field_preferences.json"
 
         # Write JSON with wrong data types

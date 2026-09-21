@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .translations import get_text
+from .translations import SUPPORTED_LANGUAGES, get_text
 
 if TYPE_CHECKING:
     from ..core.persistent_settings import CustomFieldDefinition
@@ -63,7 +63,12 @@ def build_critical_constraints(
         Critical constraints string.
     """
     if single_item:
-        return get_text("constraints.single_item", output_language)
+        return "\n".join(
+            (
+                get_text("constraints.single_item", output_language),
+                get_text("constraints.no_guess", output_language),
+            )
+        )
     return get_text("constraints.normal_rules", output_language)
 
 
@@ -211,6 +216,12 @@ def build_language_instruction(output_language: str | None) -> str:
         return ""
 
     lang = output_language.strip()
+    if lang not in SUPPORTED_LANGUAGES:
+        return (
+            f"\nIMPORTANT - OUTPUT LANGUAGE: You MUST write all item names, descriptions, "
+            f"and notes in {lang}. Keep JSON field names (name, description, etc.) in English "
+            "for compatibility.\n"
+        )
     instruction = get_text("language.instruction", lang)
     example = get_text("language.example", lang)
 

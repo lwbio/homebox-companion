@@ -27,16 +27,25 @@ router = APIRouter()
 async def list_items(
     gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
     location_id: str | None = Query(None, alias="location_id"),
-) -> list[dict]:
+    tag_id: str | None = Query(None, alias="tag"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+) -> dict[str, Any]:
     """
     List items, optionally filtered by location.
 
     Returns a simplified list of items suitable for selection UI.
     """
-    logger.debug(f"Fetching items for location_id={location_id}")
+    logger.debug(f"Fetching items for location_id={location_id}, tag_id={tag_id}, page={page}")
 
-    response = await gateway.list_items(location_id=location_id)
+    response = await gateway.list_items(
+        location_id=location_id,
+        tag_ids=[tag_id] if tag_id else None,
+        page=page,
+        page_size=page_size,
+    )
     items = response.get("items", [])
+    total = response.get("total", 0)
 
     # Return simplified item data
     result = [
@@ -45,12 +54,72 @@ async def list_items(
             "name": item["name"],
             "quantity": item.get("quantity", 1),
             "thumbnailId": item.get("thumbnailId"),
+            "createdAt": item.get("createdAt"),
+            "tags": [
+                {"id": tag["id"], "name": tag.get("name", "")}
+                for tag in item.get("tags", [])
+                if tag.get("id")
+            ],
+            "location": (
+                {"id": item["parent"]["id"], "name": item["parent"].get("name", "")}
+                if (
+                    item.get("parent")
+                    and item["parent"].get("id")
+                    and item["parent"].get("entityType", {}).get("isLocation", True)
+                )
+                else None
+            ),
         }
         for item in items
     ]
 
-    logger.debug(f"Found {len(result)} items")
-    return result
+    logger.debug(f"Found {len(result)} items (total: {total})")
+    return {"items": result, "total": total, "page": page, "pageSize": page_size}
+
+
+@router.get("/items/{item_id}")
+async def get_item(
+    item_id: str,
+    gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
+) -> dict[str, Any]:
+    """Get full item details for the inventory browser."""
+    full_item = await gateway.get_item(item_id)
+    thumbnail_id = full_item.get("thumbnailId")
+    if not thumbnail_id and full_item.get("attachments"):
+        thumbnail_id = full_item["attachments"][0].get("id")
+    path = await gateway.get_item_path(item_id)
+    parent_data = full_item.get("parent") or full_item.get("location")
+    location = None
+    if parent_data and parent_data.get("id"):
+        entity_type = parent_data.get("entityType", {})
+        if entity_type.get("isLocation", True):
+            location = {"id": parent_data["id"], "name": parent_data.get("name", "")}
+    return {
+        "id": full_item.get("id", ""),
+        "name": full_item.get("name", ""),
+        "description": full_item.get("description", ""),
+        "quantity": full_item.get("quantity", 1),
+        "thumbnailId": thumbnail_id,
+        "createdAt": full_item.get("createdAt"),
+        "assetId": full_item.get("assetId"),
+        "manufacturer": full_item.get("manufacturer"),
+        "modelNumber": full_item.get("modelNumber"),
+        "serialNumber": full_item.get("serialNumber"),
+        "purchasePrice": full_item.get("purchasePrice"),
+        "purchaseFrom": full_item.get("purchaseFrom"),
+        "notes": full_item.get("notes"),
+        "insured": full_item.get("insured", False),
+        "tags": [
+            {"id": tag["id"], "name": tag.get("name", "")}
+            for tag in full_item.get("tags", [])
+            if tag.get("id")
+        ],
+        "location": location,
+        "path": [
+            {"id": entry["id"], "name": entry.get("name", ""), "type": entry.get("type", "")}
+            for entry in path
+        ],
+    }
 
 
 @router.post("/items")
