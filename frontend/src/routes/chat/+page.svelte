@@ -19,6 +19,7 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ApprovalModal from '$lib/components/ApprovalModal.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import AppContainer from '$lib/components/AppContainer.svelte';
 	import { t } from '$lib/i18n/reactive.svelte';
 
@@ -28,6 +29,7 @@
 	let isEnabled = $state(true);
 	let isDemoMode = $state(false);
 	let approvalModalOpen = $state(false);
+	let clearHistoryDialogOpen = $state(false);
 
 	// Terminal-style auto-scroll: only scroll if user hasn't scrolled up
 	let userHasScrolledUp = $state(false);
@@ -143,12 +145,15 @@
 		}
 	});
 
-	async function handleClearHistory() {
-		if (confirm('Clear all chat history?')) {
-			log.info('Clearing chat history');
-			await chatStore.clearHistory();
-			log.debug('Chat history cleared');
-		}
+	function handleClearHistory() {
+		clearHistoryDialogOpen = true;
+	}
+
+	async function confirmClearHistory() {
+		clearHistoryDialogOpen = false;
+		log.info('Clearing chat history');
+		await chatStore.clearHistory();
+		log.debug('Chat history cleared');
 	}
 
 	function handleOpenApprovals() {
@@ -271,3 +276,14 @@
 
 <!-- Approval Modal -->
 <ApprovalModal bind:open={approvalModalOpen} approvals={chatStore.pendingApprovals} />
+
+<ConfirmDialog
+	open={clearHistoryDialogOpen}
+	title={t('common.clearChatHistory')}
+	message={t('chat.clearConfirm')}
+	confirmLabel={t('chat.clear')}
+	cancelLabel={t('common.cancel')}
+	confirmVariant="danger"
+	onConfirm={confirmClearHistory}
+	onCancel={() => (clearHistoryDialogOpen = false)}
+/>

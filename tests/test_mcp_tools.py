@@ -12,6 +12,7 @@ import pytest
 from conftest import HomeboxAuth
 
 from homebox_companion import HomeboxClient, ItemCreate
+from homebox_companion.core import config
 from homebox_companion.mcp.tools import (
     GetItemTool,
     GetLocationTool,
@@ -276,8 +277,9 @@ class TestListTags:
     """Tests for list_tags tool."""
 
     @pytest.mark.asyncio
-    async def test_returns_tags_on_success(self, mock_client: MagicMock):
+    async def test_returns_tags_on_success(self, mock_client: MagicMock, monkeypatch: pytest.MonkeyPatch):
         """Should return tags list with URLs on successful API call."""
+        monkeypatch.setattr(config, "settings", config.Settings(_env_file=None, link_base_url="https://links.example.com/"))
         mock_tags = [
             {"id": "tag1", "name": "Electronics"},
             {"id": "tag2", "name": "Furniture"},
@@ -293,12 +295,10 @@ class TestListTags:
         assert len(result.data) == 2
         assert result.data[0]["id"] == "tag1"
         assert result.data[0]["name"] == "Electronics"
-        assert "url" in result.data[0]
-        assert "items?tag=tag1" in result.data[0]["url"]
+        assert result.data[0]["url"] == "https://links.example.com/items?tag=tag1"
         assert result.data[1]["id"] == "tag2"
         assert result.data[1]["name"] == "Furniture"
-        assert "url" in result.data[1]
-        assert "items?tag=tag2" in result.data[1]["url"]
+        assert result.data[1]["url"] == "https://links.example.com/items?tag=tag2"
         mock_client.list_tags.assert_called_once_with("test-token")
 
 

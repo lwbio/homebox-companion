@@ -9,6 +9,7 @@
 		message: string;
 		confirmLabel?: string;
 		cancelLabel?: string;
+		confirmVariant?: 'primary' | 'danger';
 		onConfirm: () => void;
 		onCancel: () => void;
 	}
@@ -19,6 +20,7 @@
 		message,
 		confirmLabel = t('confirm.accept'),
 		cancelLabel = t('confirm.cancel'),
+		confirmVariant = 'primary',
 		onConfirm,
 		onCancel,
 	}: Props = $props();
@@ -30,7 +32,7 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+		if (open && event.key === 'Escape') {
 			onCancel();
 		}
 	}
@@ -44,20 +46,27 @@
 	<div
 		class="animate-in fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 backdrop-blur-sm"
 		onclick={handleBackdropClick}
+		role="presentation"
 	>
-		<div class="mx-4 w-full max-w-sm">
+		<div
+			class="mx-4 w-full max-w-sm"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="dialog-title"
+			aria-describedby="dialog-message"
+		>
 			<Card padding="lg">
 				<h2 id="dialog-title" class="mb-2 text-h3 text-neutral-100">
 					{title}
 				</h2>
-				<p class="mb-6 text-body text-neutral-400">
+				<p id="dialog-message" class="mb-6 text-body text-neutral-400">
 					{message}
 				</p>
 				<div class="flex gap-3">
 					<Button variant="secondary" full onclick={onCancel}>
 						{cancelLabel}
 					</Button>
-					<Button variant="primary" full onclick={onConfirm}>
+					<Button variant={confirmVariant} full onclick={onConfirm}>
 						{confirmLabel}
 					</Button>
 				</div>
