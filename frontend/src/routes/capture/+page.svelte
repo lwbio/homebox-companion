@@ -52,7 +52,6 @@
 	let additionalCameraInputs: { [key: number]: HTMLInputElement } = {};
 	let analysisAnimationComplete = $state(false);
 	let isStartingAnalysis = $state(false);
-	let isOpeningPicker = $state(false);
 	let isProcessingSelection = $state(false);
 
 	// Track object URLs for cleanup (prevents memory leaks)
@@ -123,7 +122,7 @@
 		isAnalyzing || (status === 'reviewing' && !analysisAnimationComplete)
 	);
 	let isCaptureLocked = $derived(
-		status !== 'capturing' || isStartingAnalysis || isOpeningPicker || isProcessingSelection
+		status !== 'capturing' || isStartingAnalysis || isProcessingSelection
 	);
 
 	// Cleanup orphaned Object URLs when workflow is reset (images array becomes empty)
@@ -352,18 +351,23 @@
 		log.info(`Additional file input handled: totalImages=${totalImageCount}`);
 	}
 
-	async function openPicker(input: HTMLInputElement | undefined): Promise<void> {
+	function openPicker(input: HTMLInputElement | undefined): void {
 		if (!input || isCaptureLocked) return;
-		isOpeningPicker = true;
-		try {
-			if (!(await workflow.persistAsync())) {
-				showToast(t('capture.error.persistenceFailed'), 'error');
-				return;
-			}
-			input.click();
-		} finally {
-			isOpeningPicker = false;
-		}
+
+		// Open the native picker directly from the user gesture. Persisting first
+		// can initialize IndexedDB and delay or block the system camera on mobile.
+		input.click();
+
+		// Keep the crash-recovery checkpoint, but never make the native picker wait
+		// for storage initialization or a potentially slow IndexedDB write.
+		void workflow
+			.persistAsync()
+			.then((persisted) => {
+				if (!persisted) {
+					showToast(t('capture.error.persistenceFailed'), 'error');
+				}
+			})
+			.catch(() => showToast(t('capture.error.persistenceFailed'), 'error'));
 	}
 
 	/** Handle paste event on the description input to add images from clipboard */

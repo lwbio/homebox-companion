@@ -10,6 +10,16 @@
 
 import type { ReviewItem, ConfirmedItem } from '$lib/types';
 
+function valuesEqual(left: unknown, right: unknown): boolean {
+	if (Object.is(left, right)) return true;
+	if (Array.isArray(left) && Array.isArray(right)) {
+		return (
+			left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
+		);
+	}
+	return false;
+}
+
 // =============================================================================
 // REVIEW SERVICE CLASS
 // =============================================================================
@@ -98,6 +108,12 @@ export class ReviewService {
 	updateCurrentItem(updates: Partial<ReviewItem>): void {
 		const index = this._currentReviewIndex;
 		if (index < 0 || index >= this._detectedItems.length) return;
+
+		const currentItem = this._detectedItems[index];
+		const hasChanges = Object.entries(updates).some(
+			([key, value]) => !valuesEqual(currentItem[key as keyof ReviewItem], value)
+		);
+		if (!hasChanges) return;
 
 		this._detectedItems = this._detectedItems.map((item, i) =>
 			i === index ? { ...item, ...updates } : item
